@@ -1,38 +1,61 @@
 import React, { useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, Image, StyleSheet } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, Image, StyleSheet, Alert } from "react-native";
 import { useNavigation } from "@react-navigation/native";
+import { createUserWithEmailAndPassword } from "firebase/auth";
+import { auth } from "../firebaseConfig";
 
 export default function RegisterScreen() {
     const navigation = useNavigation();
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [confirmPassword, setConfirmPassword] = useState("");
+    const [loading, setLoading] = useState(false);
+
+    const handleSignUp = async () => {
+        if (!email || !password || !confirmPassword) {
+            Alert.alert("Error", "Please fill out all fields.");
+            return;
+        }
+        if (password !== confirmPassword) {
+            Alert.alert("Error", "Passwords do not match.");
+            return;
+        }
+
+        setLoading(true);
+        try {
+            await createUserWithEmailAndPassword(auth, email, password);
+            Alert.alert("Success", "Account created successfully!");
+            navigation.navigate("Login" as never);
+        } catch (error: any) {
+            console.error(error);
+            Alert.alert("Registration Failed", error.message);
+        } finally {
+            setLoading(false);
+        }
+    };
 
     return (
         <View style={styles.container}>
-            {/* Back Button */}
             <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
                 <Text style={styles.backText}>← Back</Text>
             </TouchableOpacity>
 
-            {/* Logo */}
             <Image
-                source={require("../assets/Hirayag_Logo.png")} // put your logo here
+                source={require("../assets/Hirayag_Logo.png")}
                 style={styles.logo}
                 resizeMode="contain"
             />
 
-            {/* Title */}
             <Text style={styles.title}>Sign Up</Text>
             <Text style={styles.subtitle}>Create your Account</Text>
 
-            {/* Input Fields */}
             <TextInput
                 style={styles.input}
                 placeholder="Email"
                 placeholderTextColor="#aaa"
                 value={email}
                 onChangeText={setEmail}
+                autoCapitalize="none"
             />
             <TextInput
                 style={styles.input}
@@ -51,19 +74,16 @@ export default function RegisterScreen() {
                 onChangeText={setConfirmPassword}
             />
 
-            {/* Sign Up Button */}
-            <TouchableOpacity style={styles.signUpButton}>
-                <Text style={styles.signUpText}>Sign Up</Text>
+            <TouchableOpacity style={styles.signUpButton} onPress={handleSignUp} disabled={loading}>
+                <Text style={styles.signUpText}>{loading ? "Creating..." : "Sign Up"}</Text>
             </TouchableOpacity>
 
-            {/* Divider */}
             <View style={styles.dividerContainer}>
                 <View style={styles.divider} />
                 <Text style={styles.orText}>or</Text>
                 <View style={styles.divider} />
             </View>
 
-            {/* Social Buttons */}
             <Text style={styles.socialText}>sign up with</Text>
             <View style={styles.socialContainer}>
                 <TouchableOpacity style={styles.socialButton}>
@@ -74,13 +94,9 @@ export default function RegisterScreen() {
                 </TouchableOpacity>
             </View>
 
-            {/* Login Redirect */}
             <Text style={styles.footerText}>
                 Already have an account?{" "}
-                <Text
-                    style={styles.loginLink}
-                    onPress={() => navigation.navigate("Login" as never)}
-                >
+                <Text style={styles.loginLink} onPress={() => navigation.navigate("Login" as never)}>
                     Login
                 </Text>
             </Text>

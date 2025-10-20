@@ -1,14 +1,17 @@
 import { ScrollView, View, Text, TextInput, TouchableOpacity, Image, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
+import {useNavigation} from "@react-navigation/native";
 
 export default function LoginScreen() {
     const router = useRouter();
+    const navigation = useNavigation();
+
 
     return (
         <ScrollView contentContainerStyle={styles.container}>
             <View style={styles.topSection}>
-                <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-                    <Text>Back</Text>
+                <TouchableOpacity style={styles.backButton} onPress={() => router.push("/")}>
+                    <Text>← Back</Text>
                 </TouchableOpacity>
                 <Image
                     source={require("../assets/Hirayag_Logo.png")}
@@ -38,7 +41,7 @@ export default function LoginScreen() {
                     </TouchableOpacity>
                 </View>
 
-h                <View style={styles.registerRow}>
+                <View style={styles.registerRow}>
                     <Text style={styles.registerText}>Don’t have an account? </Text>
                     <TouchableOpacity onPress={() => router.push("/register")}>
                         <Text style={styles.registerLink}>Register</Text>
