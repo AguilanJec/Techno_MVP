@@ -90,17 +90,24 @@ export default function SearchScreen() {
 
             {/* Bottom Navigation */}
             <View style={styles.navbar}>
-                <TouchableOpacity onPress={() => router.push("/")}>
-                    <Ionicons name="home-outline" size={26} color="#7B52AB" />
+                <TouchableOpacity onPress={() => router.push("/home")}>
+                    <Ionicons name="home-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
-                <TouchableOpacity>
-                    <Ionicons name="calendar-outline" size={26} color="#7B52AB" />
+
+                <TouchableOpacity onPress={() => router.push("/bookinglists")}>
+                    <Ionicons name="calendar-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
+
                 <TouchableOpacity onPress={() => router.push("/search")}>
-                    <Ionicons name="search-outline" size={26} color="#7B52AB" />
+                    <Ionicons name="search-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
-                <TouchableOpacity>
-                    <Ionicons name="person-outline" size={26} color="#7B52AB" />
+
+                <TouchableOpacity onPress={() => router.push("/message")}>
+                    <Ionicons name="chatbubble-outline" size={24} color="#8e44ad" />
+                </TouchableOpacity>
+
+                <TouchableOpacity onPress={() => router.push("/account")}>
+                    <Ionicons name="person-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
             </View>
         </View>
@@ -204,14 +211,10 @@ const styles = StyleSheet.create({
         color: "#777",
     },
     navbar: {
-        flexDirection: "row",
-        justifyContent: "space-around",
-        paddingVertical: 15,
+        flexDirection: 'row',
+        justifyContent: 'space-around',
+        paddingVertical: 10,
         borderTopWidth: 1,
-        borderTopColor: "#eee",
-        position: "absolute",
-        bottom: 0,
-        width: "100%",
-        backgroundColor: "#fff",
+        borderColor: '#eee',
     },
 });

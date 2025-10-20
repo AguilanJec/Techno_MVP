@@ -8,33 +8,15 @@ import {
     SafeAreaView,
     FlatList,
     Modal,
-    Alert,
 } from "react-native";
 import { useRouter } from "expo-router";
+import { Ionicons } from "@expo/vector-icons"; // ✅ added for bottom nav icons
 
 // Mock data for messages
 const INITIAL_MESSAGES = [
-    {
-        id: "1",
-        name: "Steve Rogers",
-        lastMessage: "Hello is Tom 10AM okay for us",
-        time: "9:40 AM",
-        unread: false,
-    },
-    {
-        id: "2",
-        name: "Natasha Romanof",
-        lastMessage: "Your: What's man!",
-        time: "9:40 AM",
-        unread: true,
-    },
-    {
-        id: "3",
-        name: "Peter Parker",
-        lastMessage: "Your: What's man!",
-        time: "9:40 AM",
-        unread: false,
-    },
+    { id: "1", name: "Steve Rogers", lastMessage: "Hello is Tom 10AM okay for us", time: "9:40 AM", unread: false },
+    { id: "2", name: "Natasha Romanof", lastMessage: "Your: What's man!", time: "9:40 AM", unread: true },
+    { id: "3", name: "Peter Parker", lastMessage: "Your: What's man!", time: "9:40 AM", unread: false },
 ];
 
 const ALL_CONTACTS = [
@@ -55,13 +37,11 @@ export default function MessageScreen() {
     const [modalVisible, setModalVisible] = useState(false);
     const [messages, setMessages] = useState(INITIAL_MESSAGES);
 
-    // Filter messages based on search query
     const filteredMessages = messages.filter(message =>
         message.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         message.lastMessage.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
-    // Filter contacts for modal (exclude existing conversations)
     const availableContacts = ALL_CONTACTS.filter(contact =>
         !messages.some(msg => msg.name === contact.name)
     );
@@ -95,7 +75,6 @@ export default function MessageScreen() {
         <TouchableOpacity
             style={styles.contactItem}
             onPress={() => {
-                // Add new conversation
                 const newMessage = {
                     id: Date.now().toString(),
                     name: item.name,
@@ -105,7 +84,7 @@ export default function MessageScreen() {
                 };
                 setMessages(prev => [newMessage, ...prev]);
                 setModalVisible(false);
-                setSearchQuery(""); // Clear search
+                setSearchQuery("");
                 router.push(`/chat?user=${encodeURIComponent(item.name)}`);
             }}
         >
@@ -164,14 +143,33 @@ export default function MessageScreen() {
             <TouchableOpacity
                 style={styles.writeButton}
                 onPress={() => {
-                    setSearchQuery(""); // Clear search when opening modal
+                    setSearchQuery("");
                     setModalVisible(true);
                 }}
             >
                 <Text style={styles.writeButtonText}>Write a message</Text>
             </TouchableOpacity>
 
-            {/* Contact Selection Modal */}
+            {/* ✅ BOTTOM NAVIGATION BAR */}
+            <View style={styles.bottomNav}>
+                <TouchableOpacity onPress={() => router.push("/home")}>
+                    <Ionicons name="home-outline" size={24} color="#8e44ad" />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => router.push("/bookinglists")}>
+                    <Ionicons name="calendar-outline" size={24} color="#8e44ad" />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => router.push("/search")}>
+                    <Ionicons name="search-outline" size={24} color="#8e44ad" />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => router.push("/message")}>
+                    <Ionicons name="chatbubble-outline" size={24} color="#8e44ad" />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => router.push("/account")}>
+                    <Ionicons name="person-outline" size={24} color="#8e44ad" />
+                </TouchableOpacity>
+            </View>
+
+            {/* Contact Modal */}
             <Modal
                 animationType="slide"
                 transparent={true}
@@ -217,10 +215,7 @@ export default function MessageScreen() {
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: "#F4EDFF",
-    },
+    container: { flex: 1, backgroundColor: "#F4EDFF" },
     header: {
         flexDirection: "row",
         alignItems: "center",
@@ -229,32 +224,12 @@ const styles = StyleSheet.create({
         paddingVertical: 15,
         backgroundColor: "#F4EDFF",
     },
-    backButton: {
-        padding: 5,
-    },
-    backButtonText: {
-        fontSize: 20,
-        color: "#4B3C88",
-        fontWeight: "bold",
-    },
-    headerTitle: {
-        fontSize: 18,
-        fontWeight: "bold",
-        color: "#4B3C88",
-    },
-    placeholder: {
-        width: 30,
-    },
-    currentTime: {
-        textAlign: "center",
-        fontSize: 16,
-        color: "#666",
-        marginVertical: 10,
-    },
-    searchContainer: {
-        paddingHorizontal: 20,
-        marginBottom: 10,
-    },
+    backButton: { padding: 5 },
+    backButtonText: { fontSize: 20, color: "#4B3C88", fontWeight: "bold" },
+    headerTitle: { fontSize: 18, fontWeight: "bold", color: "#4B3C88" },
+    placeholder: { width: 30 },
+    currentTime: { textAlign: "center", fontSize: 16, color: "#666", marginVertical: 10 },
+    searchContainer: { paddingHorizontal: 20, marginBottom: 10 },
     searchInput: {
         backgroundColor: "#fff",
         borderRadius: 20,
@@ -264,10 +239,7 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: "#DDD",
     },
-    messagesList: {
-        flex: 1,
-        paddingHorizontal: 15,
-    },
+    messagesList: { flex: 1, paddingHorizontal: 15 },
     messageItem: {
         flexDirection: "row",
         alignItems: "center",
@@ -281,10 +253,7 @@ const styles = StyleSheet.create({
         shadowRadius: 3,
         elevation: 2,
     },
-    avatarContainer: {
-        position: "relative",
-        marginRight: 15,
-    },
+    avatarContainer: { position: "relative", marginRight: 15 },
     avatar: {
         width: 50,
         height: 50,
@@ -293,11 +262,7 @@ const styles = StyleSheet.create({
         justifyContent: "center",
         alignItems: "center",
     },
-    avatarText: {
-        color: "#fff",
-        fontWeight: "bold",
-        fontSize: 16,
-    },
+    avatarText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
     unreadDot: {
         position: "absolute",
         top: -2,
@@ -309,23 +274,10 @@ const styles = StyleSheet.create({
         borderWidth: 2,
         borderColor: "#fff",
     },
-    messageContent: {
-        flex: 1,
-    },
-    name: {
-        fontSize: 16,
-        fontWeight: "bold",
-        color: "#4B3C88",
-        marginBottom: 4,
-    },
-    messageText: {
-        fontSize: 14,
-        color: "#666",
-    },
-    time: {
-        fontSize: 12,
-        color: "#999",
-    },
+    messageContent: { flex: 1 },
+    name: { fontSize: 16, fontWeight: "bold", color: "#4B3C88", marginBottom: 4 },
+    messageText: { fontSize: 14, color: "#666" },
+    time: { fontSize: 12, color: "#999" },
     writeButton: {
         backgroundColor: "#BFA2E0",
         margin: 20,
@@ -338,16 +290,17 @@ const styles = StyleSheet.create({
         shadowRadius: 4,
         elevation: 3,
     },
-    writeButtonText: {
-        color: "#fff",
-        fontSize: 16,
-        fontWeight: "600",
+    writeButtonText: { color: "#fff", fontSize: 16, fontWeight: "600" },
+    bottomNav: {
+        flexDirection: "row",
+        justifyContent: "space-around",
+        alignItems: "center",
+        paddingVertical: 10,
+        borderTopWidth: 1,
+        borderColor: "#ddd",
+        backgroundColor: "#fff",
     },
-    modalContainer: {
-        flex: 1,
-        backgroundColor: "rgba(0,0,0,0.5)",
-        justifyContent: "flex-end",
-    },
+    modalContainer: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
     modalContent: {
         backgroundColor: "#fff",
         borderTopLeftRadius: 20,
@@ -361,15 +314,8 @@ const styles = StyleSheet.create({
         alignItems: "center",
         marginBottom: 15,
     },
-    modalTitle: {
-        fontSize: 18,
-        fontWeight: "bold",
-        color: "#4B3C88",
-    },
-    closeButton: {
-        fontSize: 20,
-        color: "#666",
-    },
+    modalTitle: { fontSize: 18, fontWeight: "bold", color: "#4B3C88" },
+    closeButton: { fontSize: 20, color: "#666" },
     modalSearchInput: {
         backgroundColor: "#F4EDFF",
         borderRadius: 20,
@@ -378,9 +324,7 @@ const styles = StyleSheet.create({
         fontSize: 16,
         marginBottom: 15,
     },
-    contactsList: {
-        maxHeight: 300,
-    },
+    contactsList: { maxHeight: 300 },
     contactItem: {
         flexDirection: "row",
         alignItems: "center",
@@ -388,18 +332,7 @@ const styles = StyleSheet.create({
         borderBottomWidth: 1,
         borderBottomColor: "#f0f0f0",
     },
-    contactName: {
-        fontSize: 16,
-        color: "#333",
-        marginLeft: 15,
-    },
-    emptyState: {
-        padding: 20,
-        alignItems: "center",
-    },
-    emptyStateText: {
-        color: "#666",
-        fontSize: 16,
-        textAlign: "center",
-    },
+    contactName: { fontSize: 16, color: "#333", marginLeft: 15 },
+    emptyState: { padding: 20, alignItems: "center" },
+    emptyStateText: { color: "#666", fontSize: 16, textAlign: "center" },
 });
