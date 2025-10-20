@@ -1,11 +1,64 @@
-import { ScrollView, View, Text, TextInput, TouchableOpacity, Image, StyleSheet } from "react-native";
+import React, { useState } from "react";
+import {
+    ScrollView,
+    View,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    Image,
+    StyleSheet,
+    Alert,
+} from "react-native";
 import { useRouter } from "expo-router";
-import {useNavigation} from "@react-navigation/native";
+import { useNavigation } from "@react-navigation/native";
+import { signInWithEmailAndPassword } from "firebase/auth";
+import { FirebaseError } from "firebase/app"; // ✅ Type import
+import { auth } from "../firebaseConfig";
 
 export default function LoginScreen() {
     const router = useRouter();
     const navigation = useNavigation();
 
+    const [email, setEmail] = useState("");
+    const [password, setPassword] = useState("");
+
+    const handleLogin = async () => {
+        if (!email || !password) {
+            Alert.alert("Error", "Please enter both email and password.");
+            return;
+        }
+
+        try {
+            await signInWithEmailAndPassword(auth, email, password);
+            Alert.alert("Success", "You are now logged in!");
+            router.replace("/"); // ✅ Redirect after login
+        } catch (error) {
+            console.error("Login error:", error);
+
+            if (error instanceof FirebaseError) {
+                switch (error.code) {
+                    case "auth/invalid-credential":
+                    case "auth/wrong-password":
+                        Alert.alert("Error", "Invalid email or password.");
+                        break;
+                    case "auth/user-not-found":
+                        Alert.alert("Error", "No account found with this email.");
+                        break;
+                    case "auth/invalid-email":
+                        Alert.alert("Error", "Invalid email format.");
+                        break;
+                    case "auth/too-many-requests":
+                        Alert.alert("Error", "Too many failed attempts. Try again later.");
+                        break;
+                    default:
+                        Alert.alert("Error", error.message);
+                        break;
+                }
+            } else {
+                Alert.alert("Error", "An unexpected error occurred. Please try again.");
+            }
+        }
+    };
 
     return (
         <ScrollView contentContainerStyle={styles.container}>
@@ -24,20 +77,38 @@ export default function LoginScreen() {
                 <Text style={styles.loginTitle}>Log In</Text>
                 <Text style={styles.subText}>Login to your Account</Text>
 
-                <TextInput style={styles.input} placeholder="Phone or Email" />
-                <TextInput style={styles.input} placeholder="Password" secureTextEntry />
+                <TextInput
+                    style={styles.input}
+                    placeholder="Email"
+                    value={email}
+                    onChangeText={setEmail}
+                    autoCapitalize="none"
+                />
+                <TextInput
+                    style={styles.input}
+                    placeholder="Password"
+                    secureTextEntry
+                    value={password}
+                    onChangeText={setPassword}
+                />
 
-                <TouchableOpacity style={styles.loginButton} onPress={() => router.replace("/")}>
+                <TouchableOpacity style={styles.loginButton} onPress={handleLogin}>
                     <Text style={styles.loginButtonText}>Log In</Text>
                 </TouchableOpacity>
 
                 <Text style={styles.orText}>or sign in with</Text>
                 <View style={styles.socialRow}>
                     <TouchableOpacity style={styles.socialButton}>
-                        <Image source={require("../assets/Facebook_Logo.png")} style={styles.socialIcon} />
+                        <Image
+                            source={require("../assets/Facebook_Logo.png")}
+                            style={styles.socialIcon}
+                        />
                     </TouchableOpacity>
                     <TouchableOpacity style={styles.socialButton}>
-                        <Image source={require("../assets/Google_Logo.png")} style={styles.socialIcon} />
+                        <Image
+                            source={require("../assets/Google_Logo.png")}
+                            style={styles.socialIcon}
+                        />
                     </TouchableOpacity>
                 </View>
 

@@ -3,6 +3,7 @@ import { View, Text, TextInput, TouchableOpacity, Image, StyleSheet, Alert } fro
 import { useNavigation } from "@react-navigation/native";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import { auth } from "../firebaseConfig";
+import { router } from "expo-router";
 
 export default function RegisterScreen() {
     const navigation = useNavigation();
@@ -96,7 +97,7 @@ export default function RegisterScreen() {
 
             <Text style={styles.footerText}>
                 Already have an account?{" "}
-                <Text style={styles.loginLink} onPress={() => navigation.navigate("Login" as never)}>
+                <Text style={styles.loginLink} onPress={() => router.push("/login")}>
                     Login
                 </Text>
             </Text>
