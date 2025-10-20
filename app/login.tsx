@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
     ScrollView,
     View,
@@ -11,9 +11,17 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useNavigation } from "@react-navigation/native";
-import { signInWithEmailAndPassword } from "firebase/auth";
-import { FirebaseError } from "firebase/app"; // ✅ Type import
+import {
+    signInWithEmailAndPassword,
+    GoogleAuthProvider,
+    signInWithCredential,
+} from "firebase/auth";
+import { FirebaseError } from "firebase/app";
 import { auth } from "../firebaseConfig";
+import * as WebBrowser from "expo-web-browser";
+import * as Google from "expo-auth-session/providers/google";
+
+WebBrowser.maybeCompleteAuthSession();
 
 export default function LoginScreen() {
     const router = useRouter();
@@ -22,6 +30,30 @@ export default function LoginScreen() {
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
 
+    // --- GOOGLE SIGN-IN CONFIG ---
+    const [request, response, promptAsync] = Google.useAuthRequest({
+        webClientId: "308001835959-7m2cefe3rpp9l1lj0m3v2veo0aeai1da.apps.googleusercontent.com",
+        androidClientId: "308001835959-1hpdmie9dfth2h7rvkdsuujetg13kfis.apps.googleusercontent.com",
+    });
+
+    useEffect(() => {
+        if (response?.type === "success") {
+            const { id_token } = response.params;
+            const credential = GoogleAuthProvider.credential(id_token);
+
+            signInWithCredential(auth, credential)
+                .then(() => {
+                    Alert.alert("Success", "Logged in with Google!");
+                    router.replace("/");
+                })
+                .catch((error) => {
+                    console.error(error);
+                    Alert.alert("Error", error.message);
+                });
+        }
+    }, [response]);
+
+    // --- EMAIL/PASSWORD LOGIN ---
     const handleLogin = async () => {
         if (!email || !password) {
             Alert.alert("Error", "Please enter both email and password.");
@@ -31,7 +63,7 @@ export default function LoginScreen() {
         try {
             await signInWithEmailAndPassword(auth, email, password);
             Alert.alert("Success", "You are now logged in!");
-            router.replace("/"); // ✅ Redirect after login
+            router.replace("/");
         } catch (error) {
             console.error("Login error:", error);
 
@@ -63,7 +95,10 @@ export default function LoginScreen() {
     return (
         <ScrollView contentContainerStyle={styles.container}>
             <View style={styles.topSection}>
-                <TouchableOpacity style={styles.backButton} onPress={() => router.push("/")}>
+                <TouchableOpacity
+                    style={styles.backButton}
+                    onPress={() => router.push("/")}
+                >
                     <Text>← Back</Text>
                 </TouchableOpacity>
                 <Image
@@ -97,14 +132,9 @@ export default function LoginScreen() {
                 </TouchableOpacity>
 
                 <Text style={styles.orText}>or sign in with</Text>
+
                 <View style={styles.socialRow}>
-                    <TouchableOpacity style={styles.socialButton}>
-                        <Image
-                            source={require("../assets/Facebook_Logo.png")}
-                            style={styles.socialIcon}
-                        />
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.socialButton}>
+                    <TouchableOpacity style={styles.socialButton} onPress={() => promptAsync()}>
                         <Image
                             source={require("../assets/Google_Logo.png")}
                             style={styles.socialIcon}
