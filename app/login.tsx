@@ -65,7 +65,7 @@ export default function LoginScreen() {
             Alert.alert("Success", "You are now logged in!");
 
 
-            router.push("/search"); // ✅ Redirect after login
+            router.push("/home"); // ✅ Redirect after login
         } catch (error) {
             console.error("Login error:", error);
 
