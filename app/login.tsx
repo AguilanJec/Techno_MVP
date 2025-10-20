@@ -63,7 +63,9 @@ export default function LoginScreen() {
         try {
             await signInWithEmailAndPassword(auth, email, password);
             Alert.alert("Success", "You are now logged in!");
-            router.replace("/");
+
+
+            router.push("/search"); // ✅ Redirect after login
         } catch (error) {
             console.error("Login error:", error);
 
