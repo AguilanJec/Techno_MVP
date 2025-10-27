@@ -1,74 +1,77 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from "react-native";
-import { Ionicons, FontAwesome } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
+import { useRouter, useLocalSearchParams } from "expo-router";
+import { db } from "../firebaseConfig";
+import { doc, getDoc } from "firebase/firestore";
+
+interface Tutor {
+    id: string;
+    name: string;
+    distance: string;
+    rate: string;
+    rating: number;
+    reviews: number;
+    bio: string;
+    skills: string[];
+}
 
 export default function Details() {
     const router = useRouter();
+    const { id } = useLocalSearchParams();
+    const [tutor, setTutor] = useState<Tutor | null>(null);
+
+    // Ensure id is string
+    const tutorId = Array.isArray(id) ? id[0] : id;
+
+    useEffect(() => {
+        if (!tutorId) return;
+
+        const fetchTutor = async () => {
+            try {
+                const ref = doc(db, "providers", tutorId);
+                const snap = await getDoc(ref);
+                if (snap.exists()) setTutor({ id: snap.id, ...(snap.data() as Omit<Tutor, "id">) });
+            } catch (error) {
+                console.error("Error fetching tutor:", error);
+            }
+        };
+
+        fetchTutor();
+    }, [tutorId]);
+
+    if (!tutor)
+        return <Text style={styles.loading}>Loading tutor details...</Text>;
 
     return (
         <View style={styles.container}>
-            {/* Header */}
-            <View style={styles.header}>
-                <TouchableOpacity onPress={() => router.back()}>
-                    <Ionicons name="arrow-back" size={24} color="#fff" />
-                </TouchableOpacity>
-                <Text style={styles.headerTitle}>Service Details</Text>
-            </View>
-
             <ScrollView contentContainerStyle={styles.scrollContent}>
-                {/* Service Card */}
+                {/* Tutor Card */}
                 <View style={styles.card}>
-                    <View style={styles.row}>
-                        <Ionicons name="person-circle-outline" size={60} color="#b58dde" />
-                        <View style={styles.info}>
-                            <Text style={styles.name}>Peter Parker</Text>
-                            <Text style={styles.details}>📍 0.5 km away</Text>
-                            <Text style={styles.details}>⭐ 5.0 | 12 reviews</Text>
-                        </View>
-                        <View style={styles.priceContainer}>
-                            <Ionicons name="heart" size={20} color="red" />
-                            <Text style={styles.price}>₱5</Text>
-                            <Text style={styles.perHour}>per hour</Text>
-                        </View>
+                    <Text style={styles.name}>{tutor.name}</Text>
+                    <View style={styles.infoRow}>
+                        <Ionicons name="location-outline" size={14} color="#777" />
+                        <Text style={styles.details}> {tutor.distance}</Text>
                     </View>
-
-                    <View style={styles.buttons}>
-                        <TouchableOpacity style={styles.badge}>
-                            <Text style={styles.badgeText}>Full-time</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.messageBtn}>
-                            <Ionicons name="chatbubbles-outline" size={14} color="#fff" />
-                            <Text style={styles.messageText}>Message now</Text>
-                        </TouchableOpacity>
+                    <View style={styles.infoRow}>
+                        <Ionicons name="star-outline" size={14} color="#FFD700" />
+                        <Text style={styles.details}> {tutor.rating} ({tutor.reviews} reviews)</Text>
                     </View>
+                    <Text style={styles.rate}>{tutor.rate}</Text>
                 </View>
 
-                {/* Job Description */}
+                {/* About Section */}
                 <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Job description</Text>
-                    <Text style={styles.paragraph}>
-                        I am a compassionate and responsible nanny with experience in babysitting and providing
-                        dedicated care for children, including those with special needs. My goal is to create a safe,
-                        nurturing, and supportive environment where the child feels comfortable and encouraged to grow.
-                    </Text>
+                    <Text style={styles.sectionTitle}>About</Text>
+                    <Text style={styles.paragraph}>{tutor.bio}</Text>
                 </View>
 
-                {/* Skills & Experience */}
                 <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Skills & Experience</Text>
-                    <View style={styles.bulletList}>
-                        {[
-                            "Hands-on experience in babysitting children with unique needs.",
-                            "Skilled in assisting with daily routines such as feeding, bathing, dressing, and mobility support.",
-                            "Familiar with administering medications and following special care instructions.",
-                            "Ability to engage children in learning and play activities tailored to their developmental level.",
-                            "Knowledge of CPR and First Aid, ensuring the child’s safety at all times.",
-                            "Patient, empathetic, and reliable with a deep passion for child care.",
-                        ].map((skill, index) => (
-                            <View key={index} style={styles.bulletItem}>
-                                <Text style={styles.bullet}>•</Text>
-                                <Text style={styles.bulletText}>{skill}</Text>
+                    <Text style={styles.sectionTitle}>Skills</Text>
+                    <View style={styles.skillsContainer}>
+                        {tutor.skills.map((skill) => (
+                            <View key={skill} style={styles.skillPill}>
+                                <Text style={styles.skillText}>{skill}</Text>
                             </View>
                         ))}
                     </View>
@@ -82,16 +85,23 @@ export default function Details() {
 
             {/* Bottom Navigation */}
             <View style={styles.bottomNav}>
-                <TouchableOpacity onPress={() => router.push("/")}>
+                <TouchableOpacity onPress={() => router.push("/home")}>
                     <Ionicons name="home-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => router.push("/")}>
+
+                <TouchableOpacity onPress={() => router.push("/bookinglists")}>
                     <Ionicons name="calendar-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => router.push("/")}>
+
+                <TouchableOpacity onPress={() => router.push("/search")}>
                     <Ionicons name="search-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => router.push("/")}>
+
+                <TouchableOpacity onPress={() => router.push("/message")}>
+                    <Ionicons name="chatbubble-outline" size={24} color="#8e44ad" />
+                </TouchableOpacity>
+
+                <TouchableOpacity onPress={() => router.push("/account")}>
                     <Ionicons name="person-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
             </View>
@@ -101,77 +111,74 @@ export default function Details() {
 
 // ---------- Styles ----------
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: "#fff" },
-    header: {
-        backgroundColor: "#b58dde",
-        flexDirection: "row",
-        alignItems: "center",
-        paddingVertical: 16,
-        paddingHorizontal: 20,
-    },
-    headerTitle: { color: "#fff", fontSize: 18, fontWeight: "600", marginLeft: 10 },
-    scrollContent: { padding: 16, paddingBottom: 100 },
+    container: { flex: 1, backgroundColor: "#F5F5F5" },
+    loading: { marginTop: 150, textAlign: "center", fontSize: 16, color: "#555" },
+    scrollContent: { padding: 20, paddingBottom: 120 },
     card: {
         backgroundColor: "#fff",
-        borderRadius: 10,
-        padding: 16,
-        marginBottom: 16,
+        borderRadius: 12,
+        padding: 20,
+        marginBottom: 20,
         shadowColor: "#000",
-        shadowOpacity: 0.05,
-        shadowRadius: 4,
-        elevation: 2,
+        shadowOpacity: 0.08,
+        shadowRadius: 8,
+        elevation: 3,
     },
-    row: { flexDirection: "row", alignItems: "center" },
-    info: { flex: 1, marginLeft: 10 },
-    name: { fontSize: 18, fontWeight: "600", color: "#333" },
-    details: { fontSize: 13, color: "#777" },
-    priceContainer: { alignItems: "flex-end" },
-    price: { fontSize: 18, fontWeight: "600", color: "#8e44ad" },
-    perHour: { fontSize: 11, color: "#777" },
-    buttons: { flexDirection: "row", marginTop: 10 },
-    badge: {
-        backgroundColor: "#f0e6ff",
-        paddingHorizontal: 12,
-        paddingVertical: 4,
-        borderRadius: 20,
-        marginRight: 8,
-    },
-    badgeText: { color: "#8e44ad", fontSize: 12, fontWeight: "500" },
-    messageBtn: {
-        flexDirection: "row",
-        alignItems: "center",
-        backgroundColor: "#8e44ad",
-        paddingHorizontal: 12,
-        paddingVertical: 4,
-        borderRadius: 20,
-    },
-    messageText: { color: "#fff", fontSize: 12, marginLeft: 4 },
-    section: { marginBottom: 16 },
-    sectionTitle: { fontSize: 16, fontWeight: "700", color: "#333", marginBottom: 6 },
+    name: { fontSize: 22, fontWeight: "700", color: "#333", marginBottom: 8 },
+    infoRow: { flexDirection: "row", alignItems: "center", marginVertical: 2 },
+    details: { fontSize: 14, color: "#777", marginLeft: 4 },
+    rate: { fontSize: 18, fontWeight: "600", color: "#8e44ad", marginTop: 10 },
+    section: { marginBottom: 20 },
+    sectionTitle: { fontSize: 18, fontWeight: "700", color: "#333", marginBottom: 6 },
     paragraph: {
-        fontSize: 13,
+        fontSize: 14,
         color: "#555",
-        backgroundColor: "#f9f9f9",
-        padding: 10,
-        borderRadius: 8,
+        backgroundColor: "#fff",
+        padding: 12,
+        borderRadius: 10,
+        lineHeight: 20,
+        shadowColor: "#000",
+        shadowOpacity: 0.03,
+        shadowRadius: 3,
+        elevation: 1,
     },
-    bulletList: { marginTop: 8 },
-    bulletItem: { flexDirection: "row", marginBottom: 6 },
-    bullet: { fontSize: 14, color: "#8e44ad", marginRight: 6 },
-    bulletText: { flex: 1, fontSize: 13, color: "#555" },
     appointmentButton: {
-        backgroundColor: "#b58dde",
-        borderRadius: 25,
-        paddingVertical: 12,
+        backgroundColor: "#8e44ad",
+        borderRadius: 30,
+        paddingVertical: 14,
         alignItems: "center",
-        marginTop: 10,
+        marginBottom: 20,
+        shadowColor: "#000",
+        shadowOpacity: 0.1,
+        shadowRadius: 6,
+        elevation: 3,
     },
-    appointmentText: { color: "#fff", fontSize: 16, fontWeight: "600" },
+    appointmentText: { color: "#fff", fontSize: 16, fontWeight: "700" },
     bottomNav: {
         flexDirection: "row",
         justifyContent: "space-around",
-        paddingVertical: 12,
+        paddingVertical: 14,
         borderTopWidth: 1,
-        borderColor: "#eee",
+        borderColor: "#ddd",
+        backgroundColor: "#fff",
     },
+    skillsContainer: {
+        flexDirection: "row",
+        flexWrap: "wrap",
+        gap: 8, // for spacing between pills
+    },
+    skillPill: {
+        backgroundColor: "#EDE4F7",
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 20,
+        marginRight: 6,
+        marginBottom: 6,
+    },
+    skillText: {
+        fontSize: 13,
+        color: "#7B52AB",
+        fontWeight: "500",
+    },
+
 });

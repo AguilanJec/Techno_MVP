@@ -1,30 +1,42 @@
-import React from "react";
-import {
-    View,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    StyleSheet,
-    FlatList,
-} from "react-native";
+import React, { useEffect, useState } from "react";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, FlatList } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import { db } from "../firebaseConfig";
+import { collection, getDocs } from "firebase/firestore";
+
+interface UserData {
+    id: string;
+    name: string;
+    type: string;
+    distance: string;
+    rate: string;
+    rating: number;
+    reviews: number;
+    bio: string;
+}
 
 export default function SearchScreen() {
     const router = useRouter();
+    const [tutors, setTutors] = useState([]);
 
-    const recommended = [
-        { id: "1", name: "Frizel Facun", distance: "0.3 km away", rate: "₱5/hr" },
-    ];
+    useEffect(() => {
+        const fetchTutors = async () => {
+            const querySnapshot = await getDocs(collection(db, "providers"));
+            const list: any = [];
+            querySnapshot.forEach((doc) => {
+                list.push({ id: doc.id, ...doc.data() });
+            });
+            setTutors(list);
+        };
 
-    const closest = [
-        { id: "2", name: "Jared Lipawen", distance: "0.3 km away", rate: "₱5/hr" },
-    ];
+        fetchTutors();
+    }, []);
 
-    const renderTutor = ({ item }: any) => (
+    const renderTutor = ({ item }: { item: UserData }) => (
         <TouchableOpacity
             style={styles.card}
-            onPress={() => router.push("/details")}
+            onPress={() => router.push({ pathname: "/details", params: { id: item.id } })}
         >
             <View style={styles.profileRow}>
                 <Ionicons name="person-circle-outline" size={45} color="#7B52AB" />
@@ -35,6 +47,7 @@ export default function SearchScreen() {
                         <Text style={styles.subText}>{item.distance}</Text>
                     </View>
                 </View>
+
                 <View style={{ alignItems: "flex-end" }}>
                     <Ionicons name="heart-outline" size={20} color="#E85D75" />
                     <Text style={styles.rate}>{item.rate}</Text>
@@ -49,44 +62,16 @@ export default function SearchScreen() {
             {/* Search Bar */}
             <View style={styles.searchContainer}>
                 <Ionicons name="search-outline" size={18} color="#7B52AB" />
-                <TextInput
-                    placeholder="Search..."
-                    style={styles.searchInput}
-                    placeholderTextColor="#999"
-                />
+                <TextInput placeholder="Search..." style={styles.searchInput} placeholderTextColor="#999" />
                 <Ionicons name="options-outline" size={18} color="#7B52AB" />
             </View>
 
-            {/* Categories */}
-            <View style={styles.categoryRow}>
-                <TouchableOpacity style={styles.categoryButtonActive}>
-                    <Text style={styles.categoryTextActive}>Tutor</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.categoryButton}>
-                    <Text style={styles.categoryText}>Baby sitter</Text>
-                </TouchableOpacity>
+            {/* Section Title */}
+            <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Available Tutors Near You</Text>
             </View>
 
-            {/* Recommend Section */}
-            <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Recommend</Text>
-                <Text style={styles.sectionLink}>See more</Text>
-            </View>
-            <FlatList
-                data={recommended}
-                renderItem={renderTutor}
-                keyExtractor={(item) => item.id}
-            />
-
-            {/* Closest Section */}
-            <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Closest to you</Text>
-            </View>
-            <FlatList
-                data={closest}
-                renderItem={renderTutor}
-                keyExtractor={(item) => item.id}
-            />
+            <FlatList data={tutors} renderItem={renderTutor} keyExtractor={(item) => item.id} />
 
             {/* Bottom Navigation */}
             <View style={styles.navbar}>

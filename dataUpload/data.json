@@ -1,0 +1,32 @@
+[
+    {
+        "id": "peter_parker",
+        "name": "Peter Parker",
+        "type": "Tutor",
+        "distance": "0.5 km away",
+        "rate": "₱5/hr",
+        "rating": 5.0,
+        "reviews": 12,
+        "bio": "I am a patient and skilled tutor specializing in early childhood education."
+    },
+    {
+        "id": "natasha_romanoff",
+        "name": "Natasha Romanoff",
+        "type": "Babysitter",
+        "distance": "0.5 km away",
+        "rate": "₱5/hr",
+        "rating": 5.0,
+        "reviews": 12,
+        "bio": "Experienced babysitter with compassion and care for children."
+    },
+    {
+        "id": "jared_lipawen",
+        "name": "Jared Lipawen",
+        "type": "Tutor",
+        "distance": "0.3 km away",
+        "rate": "₱5/hr",
+        "rating": 4.9,
+        "reviews": 9,
+        "bio": "Dedicated academic tutor, focuses on confidence building."
+    }
+]
