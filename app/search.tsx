@@ -74,23 +74,19 @@ export default function SearchScreen() {
             <FlatList data={tutors} renderItem={renderTutor} keyExtractor={(item) => item.id} />
 
             {/* Bottom Navigation */}
-            <View style={styles.navbar}>
+            <View style={styles.bottomNav}>
                 <TouchableOpacity onPress={() => router.push("/home")}>
                     <Ionicons name="home-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
-
                 <TouchableOpacity onPress={() => router.push("/bookinglists")}>
                     <Ionicons name="calendar-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
-
                 <TouchableOpacity onPress={() => router.push("/search")}>
                     <Ionicons name="search-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
-
                 <TouchableOpacity onPress={() => router.push("/message")}>
                     <Ionicons name="chatbubble-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
-
                 <TouchableOpacity onPress={() => router.push("/account")}>
                     <Ionicons name="person-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
@@ -104,8 +100,6 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: "#fff",
-        paddingTop: 50,
-        paddingHorizontal: 20,
     },
     searchContainer: {
         flexDirection: "row",
@@ -195,11 +189,12 @@ const styles = StyleSheet.create({
         fontSize: 10,
         color: "#777",
     },
-    navbar: {
+    bottomNav: {
         flexDirection: 'row',
         justifyContent: 'space-around',
+        alignItems: 'center',
         paddingVertical: 10,
         borderTopWidth: 1,
-        borderColor: '#eee',
+        borderColor: '#eee'
     },
 });

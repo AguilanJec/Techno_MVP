@@ -105,8 +105,14 @@ const Home = () => {
                 <TouchableOpacity onPress={() => router.push("/home")}>
                     <Ionicons name="home-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
+                <TouchableOpacity onPress={() => router.push("/bookinglists")}>
+                    <Ionicons name="calendar-outline" size={24} color="#8e44ad" />
+                </TouchableOpacity>
                 <TouchableOpacity onPress={() => router.push("/search")}>
                     <Ionicons name="search-outline" size={24} color="#8e44ad" />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => router.push("/message")}>
+                    <Ionicons name="chatbubble-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => router.push("/account")}>
                     <Ionicons name="person-outline" size={24} color="#8e44ad" />
