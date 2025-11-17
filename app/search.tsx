@@ -39,7 +39,7 @@ export default function SearchScreen() {
             onPress={() => router.push({ pathname: "/details", params: { id: item.id } })}
         >
             <View style={styles.profileRow}>
-                <Ionicons name="person-circle-outline" size={45} color="#7B52AB" />
+                <Ionicons name="person-circle-outline" size={45} color="#b58dde" />
                 <View style={{ flex: 1, marginLeft: 10 }}>
                     <Text style={styles.name}>{item.name}</Text>
                     <View style={{ flexDirection: "row", alignItems: "center" }}>
@@ -183,7 +183,7 @@ const styles = StyleSheet.create({
     rate: {
         fontSize: 14,
         fontWeight: "bold",
-        color: "#7B52AB",
+        color: "#b58dde",
     },
     perHour: {
         fontSize: 10,

@@ -60,7 +60,7 @@ const Home = () => {
                 <Text style={styles.sectionTitle}>Best Tutors</Text>
                 {tutors.map((item) => (
                     <View key={item.id} style={styles.listCard}>
-                        <Ionicons name="person-circle-outline" size={50} color="#8e44ad" />
+                        <Ionicons name="person-circle-outline" size={50} color="#b58dde" />
                         <View style={styles.listDetails}>
                             <Text style={styles.name}>{item.name}</Text>
                             <Text style={styles.subText}>
@@ -81,7 +81,7 @@ const Home = () => {
                 <Text style={styles.sectionTitle}>Best Babysitters</Text>
                 {babysitters.map((item) => (
                     <View key={item.id} style={styles.listCard}>
-                        <Ionicons name="person-circle-outline" size={50} color="#8e44ad" />
+                        <Ionicons name="person-circle-outline" size={50} color="#b58dde" />
                         <View style={styles.listDetails}>
                             <Text style={styles.name}>{item.name}</Text>
                             <Text style={styles.subText}>
@@ -127,12 +127,12 @@ export default Home;
 
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#fff' },
-    header: { backgroundColor: '#8e44ad', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 40, paddingBottom: 10 },
+    header: { backgroundColor: '#b58dde', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 40, paddingBottom: 10 },
     headerTextContainer: { flex: 1 },
     greeting: { color: '#fff', fontSize: 16 },
     welcome: { color: '#fff', fontSize: 22, fontWeight: 'bold' },
     profileIcon: { marginLeft: 10 },
-    locationCard: { flexDirection: 'row', backgroundColor: '#9b59b6', marginHorizontal: 20, borderRadius: 12, padding: 12, alignItems: 'center', marginTop: -10 },
+    locationCard: { flexDirection: 'row', backgroundColor: '#ddc9dd', marginHorizontal: 20, borderRadius: 12, padding: 12, alignItems: 'center', marginTop: -10 },
     locationText: { color: '#fff', fontWeight: 'bold', fontSize: 16, marginLeft: 8 },
     locationSubText: { color: '#f0f0f0', fontSize: 12, marginLeft: 8 },
     scrollContent: { paddingHorizontal: 20, marginTop: 10 },
@@ -142,7 +142,7 @@ const styles = StyleSheet.create({
     name: { fontWeight: 'bold', fontSize: 16 },
     subText: { color: '#7f8c8d', fontSize: 13 },
     priceContainer: { alignItems: 'flex-end' },
-    price: { fontWeight: 'bold', fontSize: 16, color: '#8e44ad' },
+    price: { fontWeight: 'bold', fontSize: 16, color: '#b58dde' },
     perHour: { color: '#7f8c8d', fontSize: 12 },
     bottomNav: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', paddingVertical: 10, borderTopWidth: 1, borderColor: '#eee' },
 });

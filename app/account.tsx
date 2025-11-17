@@ -24,7 +24,7 @@ export default function AccountScreen() {
                         <Ionicons name="person-circle-outline" size={70} color="#b58dde" />
                         <View>
                             <Text style={styles.profileName}>Tony Stark</Text>
-                            <TouchableOpacity style={styles.profileButton}>
+                            <TouchableOpacity style={styles.profileButton} onPress={() => router.push("/profile")}>
                                 <Text style={styles.profileButtonText}>View full profile</Text>
                             </TouchableOpacity>
                         </View>
@@ -51,7 +51,7 @@ export default function AccountScreen() {
                 {/* SUPPORT */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>Support</Text>
-                    <TouchableOpacity style={styles.item}>
+                    <TouchableOpacity style={styles.item} onPress={() => router.push("/feedback")}>
                         <Text style={styles.itemText}>App feedback</Text>
                         <Ionicons name="chevron-forward" size={18} color="#777" />
                     </TouchableOpacity>

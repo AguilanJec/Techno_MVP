@@ -45,6 +45,14 @@ export default function Details() {
 
     return (
         <View style={styles.container}>
+            <View style={styles.header}>
+                <TouchableOpacity onPress={() => router.push("/account")}>
+                    <Ionicons name="arrow-back" size={24} color="#fff" />
+                </TouchableOpacity>
+                <Text style={styles.headerTitle}>Profile</Text>
+                <View style={{ width: 24 }} />
+            </View>
+
             <ScrollView contentContainerStyle={styles.scrollContent}>
                 {/* Tutor Card */}
                 <View style={styles.card}>
@@ -112,6 +120,21 @@ export default function Details() {
 // ---------- Styles ----------
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: "#F5F5F5" },
+
+    header: {
+        backgroundColor: "#b58dde", //8e44ad
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        paddingTop: 45,
+    },
+    headerTitle: {
+        color: "#fff",
+        fontSize: 18,
+        fontWeight: "600" },
+
     loading: { marginTop: 150, textAlign: "center", fontSize: 16, color: "#555" },
     scrollContent: { padding: 20, paddingBottom: 120 },
     card: {
@@ -127,7 +150,7 @@ const styles = StyleSheet.create({
     name: { fontSize: 22, fontWeight: "700", color: "#333", marginBottom: 8 },
     infoRow: { flexDirection: "row", alignItems: "center", marginVertical: 2 },
     details: { fontSize: 14, color: "#777", marginLeft: 4 },
-    rate: { fontSize: 18, fontWeight: "600", color: "#8e44ad", marginTop: 10 },
+    rate: { fontSize: 18, fontWeight: "600", color: "#b58dde", marginTop: 10 },
     section: { marginBottom: 20 },
     sectionTitle: { fontSize: 18, fontWeight: "700", color: "#333", marginBottom: 6 },
     paragraph: {
@@ -143,7 +166,7 @@ const styles = StyleSheet.create({
         elevation: 1,
     },
     appointmentButton: {
-        backgroundColor: "#8e44ad",
+        backgroundColor: "#b58dde",
         borderRadius: 30,
         paddingVertical: 14,
         alignItems: "center",
