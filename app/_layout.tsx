@@ -13,6 +13,7 @@ export default function RootLayout() {
                 <Stack.Screen name="call" />
                 <Stack.Screen name="search" />
                 <Stack.Screen name="details" />
+                <Stack.Screen name="terms_conditions" />
             </Stack>
             <StatusBar style="auto" />
         </>

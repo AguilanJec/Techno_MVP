@@ -75,9 +75,32 @@ export default function RegisterScreen() {
                 onChangeText={setConfirmPassword}
             />
 
-            <TouchableOpacity style={styles.signUpButton} onPress={handleSignUp} disabled={loading}>
-                <Text style={styles.signUpText}>{loading ? "Creating..." : "Sign Up"}</Text>
+            <TouchableOpacity
+                style={styles.signUpButton}
+                onPress={() => {
+                    if (!email || !password || !confirmPassword) {
+                        Alert.alert("Error", "Please fill out all fields.");
+                        return;
+                    }
+                    if (password !== confirmPassword) {
+                        Alert.alert("Error", "Passwords do not match.");
+                        return;
+                    }
+
+                    // Go to terms page before creating the account
+                    router.push({
+                        pathname: "/terms_conditions",
+                        params: {
+                            email,
+                            password,
+                            confirmPassword,
+                        },
+                    });
+                }}
+            >
+                <Text style={styles.signUpText}>Sign Up</Text>
             </TouchableOpacity>
+
 
             <View style={styles.dividerContainer}>
                 <View style={styles.divider} />
