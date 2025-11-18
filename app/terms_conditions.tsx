@@ -61,24 +61,29 @@ export default function TermsConditions() {
 
             {/* Accept / Decline Buttons */}
             <View style={styles.buttonRow}>
-                <TouchableOpacity style={[styles.button, styles.decline]} onPress={() => router.back()}>
+                {/* Decline Button */}
+                <TouchableOpacity
+                    style={[styles.button, styles.decline]}
+                    onPress={() => {
+                        // Navigate to Location page
+                        router.replace("/location");
+                    }}
+                >
                     <Text style={styles.declineText}>Decline</Text>
                 </TouchableOpacity>
 
+                {/* Accept Button */}
                 <TouchableOpacity
                     style={[styles.button, styles.accept]}
                     onPress={() => {
-                        // After accepting, go back and trigger sign up
-                        router.replace({
-                            pathname: "/register",
-                            params: { accepted: "true" },
-                        });
+                        // Navigate to Location page (or wherever you want)
+                        router.replace("/location");
                     }}
                 >
                     <Text style={styles.acceptText}>Accept</Text>
                 </TouchableOpacity>
-
             </View>
+
         </View>
     );
 }

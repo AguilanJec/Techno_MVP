@@ -87,19 +87,21 @@ export default function RegisterScreen() {
                         return;
                     }
 
-                    // Go to terms page before creating the account
+                    // Navigate to Role Selection page with user info
                     router.push({
-                        pathname: "/terms_conditions",
+                        pathname: "/role",
                         params: {
                             email,
                             password,
                             confirmPassword,
                         },
                     });
+
                 }}
             >
                 <Text style={styles.signUpText}>Sign Up</Text>
             </TouchableOpacity>
+
 
 
             <View style={styles.dividerContainer}>
