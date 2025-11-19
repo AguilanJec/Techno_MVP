@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
+import * as DocumentPicker from 'expo-document-picker';
 import { Audio } from "expo-av";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -24,6 +25,9 @@ interface Message {
     imageUri?: string;
     voiceUri?: string;
     fileName?: string;
+    fileSize?: number;
+    fileType?: string;
+    fileUri?: string;
     duration?: number;
 }
 
@@ -170,18 +174,49 @@ export default function ChatbotScreen() {
         }
     };
 
-    // File picker placeholder
+    // File picker - Now functional!
     const pickFile = async () => {
-        Alert.alert("Attach file", "This will open a file picker (placeholder).");
-        const newMsg: Message = {
-            id: Date.now().toString(),
-            text: "Attached a document",
-            isUser: true,
-            time: timestamp(),
-            type: "file",
-            fileName: "document.pdf",
-        };
-        setMessages((prev) => [...prev, newMsg]);
+        try {
+            const result = await DocumentPicker.getDocumentAsync({
+                type: '*/*', // All file types
+                copyToCacheDirectory: true,
+                multiple: false,
+            });
+
+            if (result.canceled) {
+                return; // User canceled the picker
+            }
+
+            const file = result.assets[0];
+
+            if (file) {
+                const fileSizeInKB = Math.round((file.size || 0) / 1024);
+                const fileType = file.mimeType || 'Unknown type';
+
+                const newMsg: Message = {
+                    id: Date.now().toString(),
+                    text: "Attached a file",
+                    isUser: true,
+                    time: timestamp(),
+                    type: "file",
+                    fileName: file.name,
+                    fileSize: fileSizeInKB,
+                    fileType: fileType,
+                    fileUri: file.uri,
+                };
+                setMessages((prev) => [...prev, newMsg]);
+
+                // Show file info to user
+                Alert.alert(
+                    "File Attached",
+                    `File: ${file.name}\nSize: ${fileSizeInKB} KB\nType: ${fileType}`,
+                    [{ text: "OK" }]
+                );
+            }
+        } catch (error) {
+            console.error("Error picking file:", error);
+            Alert.alert("Error", "Failed to pick file. Please try again.");
+        }
     };
 
     // Start voice recording
@@ -259,6 +294,28 @@ export default function ChatbotScreen() {
         }
     };
 
+    // Get file icon based on file type
+    const getFileIcon = (fileType?: string) => {
+        if (!fileType) return "document";
+
+        if (fileType.includes('pdf')) return "document-text";
+        if (fileType.includes('word') || fileType.includes('document')) return "document-text";
+        if (fileType.includes('excel') || fileType.includes('spreadsheet')) return "document";
+        if (fileType.includes('image')) return "image";
+        if (fileType.includes('video')) return "videocam";
+        if (fileType.includes('audio')) return "musical-notes";
+        if (fileType.includes('zip') || fileType.includes('compressed')) return "archive";
+
+        return "document";
+    };
+
+    // Format file size
+    const formatFileSize = (sizeInKB?: number) => {
+        if (!sizeInKB) return "Unknown size";
+        if (sizeInKB < 1024) return `${sizeInKB} KB`;
+        return `${(sizeInKB / 1024).toFixed(1)} MB`;
+    };
+
     const renderMessage = ({ item }: { item: Message }) => (
         <View style={[styles.messageRow, item.isUser ? styles.userRow : styles.otherRow]}>
             {/* Chatbot image for bot messages */}
@@ -272,15 +329,35 @@ export default function ChatbotScreen() {
             <View style={[styles.messageBubble, item.isUser ? styles.userBubble : styles.otherBubble]}>
                 {/* File */}
                 {item.type === "file" && (
-                    <TouchableOpacity style={styles.fileMessage}>
-                        <Ionicons name="document-attach" size={24} color={item.isUser ? "#fff" : "#4B3C88"} />
+                    <TouchableOpacity
+                        style={styles.fileMessage}
+                        onPress={() => {
+                            if (item.fileUri) {
+                                Alert.alert(
+                                    "File Information",
+                                    `File: ${item.fileName}\nSize: ${formatFileSize(item.fileSize)}\nType: ${item.fileType || 'Unknown'}`,
+                                    [{ text: "OK" }]
+                                );
+                            }
+                        }}
+                    >
+                        <Ionicons
+                            name={getFileIcon(item.fileType) as any}
+                            size={32}
+                            color={item.isUser ? "#fff" : "#4B3C88"}
+                        />
                         <View style={styles.fileInfo}>
                             <Text style={[styles.fileName, item.isUser ? styles.userFileText : styles.otherFileText]}>
-                                {item.fileName || "file.pdf"}
+                                {item.fileName || "Unknown file"}
                             </Text>
-                            <Text style={[styles.fileText, item.isUser ? styles.userFileText : styles.otherFileText]}>
-                                {item.text}
+                            <Text style={[styles.fileDetails, item.isUser ? styles.userFileText : styles.otherFileText]}>
+                                {formatFileSize(item.fileSize)} • {item.fileType || 'File'}
                             </Text>
+                            {item.text && (
+                                <Text style={[styles.fileText, item.isUser ? styles.userFileText : styles.otherFileText]}>
+                                    {item.text}
+                                </Text>
+                            )}
                         </View>
                     </TouchableOpacity>
                 )}
@@ -535,10 +612,24 @@ const styles = StyleSheet.create({
     voiceBar: { width: 3, backgroundColor: "#fff", marginHorizontal: 1, borderRadius: 2 },
     voiceDuration: { fontSize: 12, color: "#fff", fontWeight: "500" },
 
-    // file
-    fileMessage: { flexDirection: "row", alignItems: "center", padding: 8 },
+    // file - Updated styles
+    fileMessage: {
+        flexDirection: "row",
+        alignItems: "center",
+        padding: 8,
+        minWidth: 200,
+    },
     fileInfo: { flex: 1, marginLeft: 12 },
-    fileName: { fontSize: 14, fontWeight: "bold", marginBottom: 2 },
+    fileName: {
+        fontSize: 14,
+        fontWeight: "bold",
+        marginBottom: 2,
+    },
+    fileDetails: {
+        fontSize: 12,
+        marginBottom: 4,
+        opacity: 0.8,
+    },
     fileText: { fontSize: 12 },
     userFileText: { color: "#fff" },
     otherFileText: { color: "#333" },

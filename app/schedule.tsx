@@ -27,7 +27,7 @@ const MyBookingsScreen: React.FC = () => {
                 <Text style={styles.mainText}>are live here!</Text>
                 <Text style={styles.subText}>This page shows all of your bookings.</Text>
 
-                <TouchableOpacity style={styles.createButton}>
+                <TouchableOpacity onPress={() => router.push("/search")} style={styles.createButton}>
                     <Text style={styles.createButtonText}>Create Request</Text>
                 </TouchableOpacity>
             </View>

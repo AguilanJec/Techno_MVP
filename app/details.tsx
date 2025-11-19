@@ -46,7 +46,7 @@ export default function Details() {
     return (
         <View style={styles.container}>
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => router.push("/account")}>
+                <TouchableOpacity onPress={() => router.push("/search")}>
                     <Ionicons name="arrow-back" size={24} color="#fff" />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Profile</Text>
