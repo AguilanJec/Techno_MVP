@@ -1,4 +1,9 @@
 import React, { useState } from "react";
+import { Alert } from "react-native";
+import { createUserWithEmailAndPassword, fetchSignInMethodsForEmail } from "firebase/auth";
+import { doc, setDoc } from "firebase/firestore";
+import { auth, db } from "../firebaseConfig";
+
 import {
     View,
     Text,
@@ -11,15 +16,75 @@ import { useRouter, useLocalSearchParams } from "expo-router";
 
 export default function EditAddress() {
     const router = useRouter();
-    const { userLocation } = useLocalSearchParams();
+    const params = useLocalSearchParams();
+
+    // Extract parameters once to avoid re-declaration
+    const { email, password, userLocation: locationParam } = params;
 
     // FIX: convert string | string[] to string
-    const locationValue =
-        Array.isArray(userLocation) ? userLocation[0] : String(userLocation || "");
+    const locationValue = Array.isArray(locationParam)
+        ? locationParam[0]
+        : String(locationParam || "");
 
     const [name, setName] = useState("Tony Stark");
     const [phone, setPhone] = useState("9012398765");
     const [addressDetails, setAddressDetails] = useState("");
+
+    const handleSave = async () => {
+        console.log("handleSave called"); // Debug log
+
+        try {
+            // Convert email and password to strings safely
+            const emailString = Array.isArray(email) ? email[0] : String(email || "");
+            const passwordString = Array.isArray(password) ? password[0] : String(password || "");
+
+            console.log("Email:", emailString, "Password:", passwordString); // Debug log
+
+            if (!emailString || !passwordString) {
+                Alert.alert("Error", "Missing email or password");
+                return;
+            }
+
+            // Check if email already exists
+            const existingMethods = await fetchSignInMethodsForEmail(auth, emailString);
+            console.log("Existing methods:", existingMethods); // Debug log
+
+            if (existingMethods.length > 0) {
+                Alert.alert("Error", "Email already exists.");
+                return;
+            }
+
+            // Create user account
+            console.log("Creating user..."); // Debug log
+            const userCredential = await createUserWithEmailAndPassword(auth, emailString, passwordString);
+            const user = userCredential.user;
+
+            console.log("User created:", user.uid); // Debug log
+
+            // Save user details in Firestore
+            console.log("Saving to Firestore..."); // Debug log
+            await setDoc(doc(db, "users", user.uid), {
+                name,
+                phone,
+                address: locationValue,
+                addressDetails,
+                createdAt: new Date(),
+            });
+
+            console.log("User data saved to Firestore"); // Debug log
+
+            Alert.alert("Success", "Account created successfully!");
+            console.log("Navigating to login..."); // Debug log
+            router.replace("/login");   // redirect to Login
+            console.log("Navigation completed"); // Debug log
+
+        } catch (error: any) {
+            console.error("Registration error:", error);
+            console.error("Error code:", error.code); // Debug log
+            console.error("Error message:", error.message); // Debug log
+            Alert.alert("Error", error.message || "An error occurred during registration");
+        }
+    };
 
     return (
         <ScrollView style={{ flex: 1, backgroundColor: "#fff" }}>
@@ -81,7 +146,7 @@ export default function EditAddress() {
             {/* Save button */}
             <TouchableOpacity
                 style={styles.saveButton}
-                onPress={() => router.push("/login")}
+                onPress={handleSave}
             >
                 <Text style={styles.saveText}>Save</Text>
             </TouchableOpacity>

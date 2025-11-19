@@ -1,9 +1,10 @@
+// terms_condition.tsx
 import React from "react";
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 
 export default function TermsConditions() {
-    const { onAccept } = useLocalSearchParams(); // optional callback from register screen
+    const { email, password, confirmPassword, role } = useLocalSearchParams(); // Get the parameters
 
     return (
         <View style={styles.container}>
@@ -54,7 +55,7 @@ export default function TermsConditions() {
                 <Text style={styles.section}>5. Limitation of Liability</Text>
                 <Text style={styles.paragraph}>
                     <Text style={styles.bold}>Hirayág</Text> does not provide medical treatment, diagnosis, or
-                    guaranteed outcomes. The application and its content are provided “as is.” We are not
+                    guaranteed outcomes. The application and its content are provided as is. We are not
                     liable for any damages or issues arising from the misuse of the platform.
                 </Text>
             </ScrollView>
@@ -62,22 +63,28 @@ export default function TermsConditions() {
             {/* Accept / Decline Buttons */}
             <View style={styles.buttonRow}>
                 {/* Decline Button */}
+
                 <TouchableOpacity
                     style={[styles.button, styles.decline]}
                     onPress={() => {
-                        // Navigate to Location page
-                        router.replace("/location");
+                        // Navigate to Location page with parameters
+                        router.replace({
+                            pathname: "/location",
+                            params: { email, password, confirmPassword, role } // Make sure these are passed
+                        });
                     }}
                 >
                     <Text style={styles.declineText}>Decline</Text>
                 </TouchableOpacity>
 
-                {/* Accept Button */}
                 <TouchableOpacity
                     style={[styles.button, styles.accept]}
                     onPress={() => {
-                        // Navigate to Location page (or wherever you want)
-                        router.replace("/location");
+                        // Navigate to Location page with parameters
+                        router.replace({
+                            pathname: "/location",
+                            params: { email, password, confirmPassword, role } // Make sure these are passed
+                        });
                     }}
                 >
                     <Text style={styles.acceptText}>Accept</Text>

@@ -1,10 +1,13 @@
+// location.tsx
 import React, { useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image } from "react-native";
 import { WebView } from "react-native-webview";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 
 export default function LocationPage() {
     const router = useRouter();
+    // Get ALL parameters including email, password, etc.
+    const { email, password, confirmPassword, role } = useLocalSearchParams();
 
     const [locationText, setLocationText] = useState("Baguio");
     const [region, setRegion] = useState({
@@ -17,7 +20,13 @@ export default function LocationPage() {
     return (
         <View style={styles.container}>
             {/* Back button */}
-            <TouchableOpacity onPress={() => router.push("/terms_conditions")} style={styles.backButton}>
+            <TouchableOpacity
+                onPress={() => router.push({
+                    pathname: "/terms_conditions",
+                    params: { email, password, confirmPassword, role } // Pass params back too
+                })}
+                style={styles.backButton}
+            >
                 <Text style={styles.backText}>{"< Back"}</Text>
             </TouchableOpacity>
 
@@ -49,15 +58,19 @@ export default function LocationPage() {
                 />
             </View>
 
-
-
             {/* Next Button */}
             <TouchableOpacity
                 style={styles.nextButton}
                 onPress={() =>
                     router.push({
                         pathname: "/edit_address",
-                        params: { userLocation: locationText },
+                        params: {
+                            userLocation: locationText,
+                            email,
+                            password,
+                            confirmPassword,
+                            role
+                        },
                     })
                 }
             >
@@ -66,6 +79,7 @@ export default function LocationPage() {
         </View>
     );
 }
+
 const styles = StyleSheet.create({
     container: {
         flex: 1,
@@ -137,4 +151,3 @@ const styles = StyleSheet.create({
         fontWeight: "700",
     },
 });
-
