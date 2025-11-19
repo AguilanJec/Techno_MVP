@@ -147,7 +147,7 @@ const Home = () => {
                     </View>
                     <TouchableOpacity
                         style={styles.scheduleButton}
-                        onPress={() => router.push("/bookinglists")}
+                        onPress={() => router.push("/schedule")}
                     >
                         <Text style={styles.scheduleButtonText}>Schedule</Text>
                     </TouchableOpacity>
@@ -156,9 +156,6 @@ const Home = () => {
                 {/* Popular Services Section */}
                 <View style={styles.sectionHeader}>
                     <Text style={styles.sectionTitle}>Popular services</Text>
-                    <TouchableOpacity>
-                        <Text style={styles.seeMoreText}>See more</Text>
-                    </TouchableOpacity>
                 </View>
 
                 <FlatList

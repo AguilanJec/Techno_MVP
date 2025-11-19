@@ -42,7 +42,7 @@ export default function AccountScreen() {
                         <Text style={styles.itemText}>My messages</Text>
                         <Ionicons name="chevron-forward" size={18} color="#777" />
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.item}>
+                    <TouchableOpacity style={styles.item} onPress={() => router.push("/location")}>
                         <Text style={styles.itemText}>My location</Text>
                         <Ionicons name="chevron-forward" size={18} color="#777" />
                     </TouchableOpacity>
