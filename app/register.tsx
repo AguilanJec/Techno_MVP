@@ -1,8 +1,6 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { View, Text, TextInput, TouchableOpacity, Image, StyleSheet, Alert } from "react-native";
 import { useNavigation } from "@react-navigation/native";
-import { createUserWithEmailAndPassword } from "firebase/auth";
-import { auth } from "../firebaseConfig";
 import { router } from "expo-router";
 
 export default function RegisterScreen() {
@@ -10,28 +8,92 @@ export default function RegisterScreen() {
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [confirmPassword, setConfirmPassword] = useState("");
-    const [loading, setLoading] = useState(false);
 
-    const handleSignUp = async () => {
-        if (!email || !password || !confirmPassword) {
-            Alert.alert("Error", "Please fill out all fields.");
-            return;
-        }
-        if (password !== confirmPassword) {
-            Alert.alert("Error", "Passwords do not match.");
-            return;
+    // State for validation feedback
+    const [passwordError, setPasswordError] = useState("");
+    const [confirmPasswordError, setConfirmPasswordError] = useState("");
+    const [emailError, setEmailError] = useState("");
+
+    // State for input styling
+    const [passwordValid, setPasswordValid] = useState(true);
+    const [confirmPasswordValid, setConfirmPasswordValid] = useState(true);
+    const [emailValid, setEmailValid] = useState(true);
+
+    // Validate password in real-time
+    useEffect(() => {
+        if (password.length > 0 && password.length < 6) {
+            setPasswordError("Password must be at least 6 characters");
+            setPasswordValid(false);
+        } else {
+            setPasswordError("");
+            setPasswordValid(true);
         }
 
-        setLoading(true);
-        try {
-            await createUserWithEmailAndPassword(auth, email, password);
-            Alert.alert("Success", "Account created successfully!");
-            navigation.navigate("Login" as never);
-        } catch (error: any) {
-            console.error(error);
-            Alert.alert("Registration Failed", error.message);
-        } finally {
-            setLoading(false);
+        if (password.length > 0 && confirmPassword.length > 0 && password !== confirmPassword) {
+            setConfirmPasswordError("Passwords do not match");
+            setConfirmPasswordValid(false);
+        } else {
+            setConfirmPasswordError("");
+            setConfirmPasswordValid(true);
+        }
+    }, [password, confirmPassword]);
+
+    const handleSignUp = () => {
+        let valid = true;
+
+        // Validate email
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!email) {
+            setEmailError("Email is required");
+            setEmailValid(false);
+            valid = false;
+        } else if (!emailRegex.test(email)) {
+            setEmailError("Please enter a valid email");
+            setEmailValid(false);
+            valid = false;
+        } else {
+            setEmailError("");
+            setEmailValid(true);
+        }
+
+        // Validate password
+        if (!password) {
+            setPasswordError("Password is required");
+            setPasswordValid(false);
+            valid = false;
+        } else if (password.length < 6) {
+            setPasswordError("Password must be at least 6 characters");
+            setPasswordValid(false);
+            valid = false;
+        } else {
+            setPasswordError("");
+            setPasswordValid(true);
+        }
+
+        // Validate confirm password
+        if (!confirmPassword) {
+            setConfirmPasswordError("Please confirm your password");
+            setConfirmPasswordValid(false);
+            valid = false;
+        } else if (password !== confirmPassword) {
+            setConfirmPasswordError("Passwords do not match");
+            setConfirmPasswordValid(false);
+            valid = false;
+        } else {
+            setConfirmPasswordError("");
+            setConfirmPasswordValid(true);
+        }
+
+        if (valid) {
+            // Navigate to Role Selection page with user info
+            router.push({
+                pathname: "/role",
+                params: {
+                    email,
+                    password,
+                    confirmPassword,
+                },
+            });
         }
     };
 
@@ -50,59 +112,46 @@ export default function RegisterScreen() {
             <Text style={styles.title}>Sign Up</Text>
             <Text style={styles.subtitle}>Create your Account</Text>
 
+            {/* Email Input */}
             <TextInput
-                style={styles.input}
+                style={[styles.input, !emailValid && styles.inputError]}
                 placeholder="Email"
                 placeholderTextColor="#aaa"
                 value={email}
                 onChangeText={setEmail}
                 autoCapitalize="none"
+                keyboardType="email-address"
             />
+            {emailError ? <Text style={styles.errorText}>{emailError}</Text> : null}
+
+            {/* Password Input */}
             <TextInput
-                style={styles.input}
+                style={[styles.input, !passwordValid && styles.inputError]}
                 placeholder="Password"
                 placeholderTextColor="#aaa"
                 secureTextEntry
                 value={password}
                 onChangeText={setPassword}
             />
+            {passwordError ? <Text style={styles.errorText}>{passwordError}</Text> : null}
+
+            {/* Confirm Password Input */}
             <TextInput
-                style={styles.input}
+                style={[styles.input, !confirmPasswordValid && styles.inputError]}
                 placeholder="Confirm Password"
                 placeholderTextColor="#aaa"
                 secureTextEntry
                 value={confirmPassword}
                 onChangeText={setConfirmPassword}
             />
+            {confirmPasswordError ? <Text style={styles.errorText}>{confirmPasswordError}</Text> : null}
 
             <TouchableOpacity
                 style={styles.signUpButton}
-                onPress={() => {
-                    if (!email || !password || !confirmPassword) {
-                        Alert.alert("Error", "Please fill out all fields.");
-                        return;
-                    }
-                    if (password !== confirmPassword) {
-                        Alert.alert("Error", "Passwords do not match.");
-                        return;
-                    }
-
-                    // Navigate to Role Selection page with user info
-                    router.push({
-                        pathname: "/role",
-                        params: {
-                            email,
-                            password,
-                            confirmPassword,
-                        },
-                    });
-
-                }}
+                onPress={handleSignUp}
             >
                 <Text style={styles.signUpText}>Sign Up</Text>
             </TouchableOpacity>
-
-
 
             <View style={styles.dividerContainer}>
                 <View style={styles.divider} />
@@ -166,9 +215,21 @@ const styles = StyleSheet.create({
         backgroundColor: "#fff",
         borderRadius: 10,
         padding: 12,
-        marginBottom: 10,
+        marginBottom: 5, // Reduced margin
         fontSize: 16,
         elevation: 2,
+    },
+    inputError: {
+        borderColor: "#FF0000",
+        borderWidth: 2,
+        backgroundColor: "#FFE6E6", // Light red background
+    },
+    errorText: {
+        width: "80%",
+        color: "#FF0000",
+        fontSize: 12,
+        marginBottom: 10,
+        paddingLeft: 10,
     },
     signUpButton: {
         backgroundColor: "#B7A1E5",
