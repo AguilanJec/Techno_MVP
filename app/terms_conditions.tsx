@@ -8,8 +8,8 @@ export default function TermsConditions() {
     return (
         <View style={styles.container}>
             {/* Back Button */}
-            <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-                <Text style={styles.backText}>Back</Text>
+            <TouchableOpacity onPress={() => router.push("/role")} style={styles.backButton}>
+                <Text style={styles.backText}>{"< Back"}</Text>
             </TouchableOpacity>
 
             {/* Title */}

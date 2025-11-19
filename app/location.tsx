@@ -16,8 +16,8 @@ export default function LocationPage() {
 
     return (
         <View style={styles.container}>
-            {/* Back */}
-            <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            {/* Back button */}
+            <TouchableOpacity onPress={() => router.push("/terms_conditions")} style={styles.backButton}>
                 <Text style={styles.backText}>{"< Back"}</Text>
             </TouchableOpacity>
 
@@ -56,7 +56,7 @@ export default function LocationPage() {
                 style={styles.nextButton}
                 onPress={() =>
                     router.push({
-                        pathname: "/role",
+                        pathname: "/edit_address",
                         params: { userLocation: locationText },
                     })
                 }

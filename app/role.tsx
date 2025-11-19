@@ -9,6 +9,11 @@ export default function RoleSelection() {
     return (
         <View style={styles.container}>
 
+            {/* Back Button */}
+            <TouchableOpacity onPress={() => router.push("/register")} style={styles.backButton}>
+                <Text style={styles.backText}>{"< Back"}</Text>
+            </TouchableOpacity>
+
             <Text style={styles.header}>What brings you to our app?</Text>
 
             {/* Parent option */}
@@ -61,6 +66,14 @@ export default function RoleSelection() {
 }
 
 const styles = StyleSheet.create({
+    backButton: { marginTop: 45, marginLeft: 20 },
+    backText: { fontSize: 16 },
+    title: {
+        textAlign: "center",
+        marginTop: 10,
+        fontSize: 24,
+        fontWeight: "bold"
+    },
     container: {
         flex: 1,
         backgroundColor: "#EDE0FF",
