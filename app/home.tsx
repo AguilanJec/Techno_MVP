@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
     View,
     Text,
@@ -33,27 +33,33 @@ interface ServiceCard {
     subtitle: string;
     icon: string;
     color: string;
+    targetSection: 'tutors' | 'babysitters';
 }
 
 const Home = () => {
     const [tutors, setTutors] = useState<UserData[]>([]);
     const [babysitters, setBabysitters] = useState<UserData[]>([]);
+    const scrollViewRef = useRef<ScrollView>(null);
+    const tutorsSectionRef = useRef<View>(null);
+    const babysittersSectionRef = useRef<View>(null);
 
-    // Popular services data
+    // Popular services data - now with target sections
     const popularServices: ServiceCard[] = [
         {
             id: '1',
             title: 'Babysitting',
             subtitle: 'Quick booking at\nyour home',
             icon: 'home-outline',
-            color: '#E8DEF8'
+            color: '#E8DEF8',
+            targetSection: 'babysitters'
         },
         {
             id: '2',
             title: 'Tutoring',
             subtitle: 'Early childhood\ndevelopment',
             icon: 'school-outline',
-            color: '#FFE8E9'
+            color: '#FFE8E9',
+            targetSection: 'tutors'
         }
     ];
 
@@ -70,8 +76,25 @@ const Home = () => {
         fetchData();
     }, []);
 
+    // Function to scroll to specific section
+    const scrollToSection = (section: 'tutors' | 'babysitters') => {
+        let yPosition = 0;
+
+        // Calculate approximate positions based on your layout
+        if (section === 'tutors') {
+            yPosition = 200;
+        } else if (section === 'babysitters') {
+            yPosition = 650;
+        }
+
+        scrollViewRef.current?.scrollTo({ y: yPosition, animated: true });
+    };
+
     const renderServiceCard = ({ item }: { item: ServiceCard }) => (
-        <TouchableOpacity style={[styles.serviceCard, { backgroundColor: item.color }]}>
+        <TouchableOpacity
+            style={[styles.serviceCard, { backgroundColor: item.color }]}
+            onPress={() => scrollToSection(item.targetSection)}
+        >
             <View style={styles.serviceContent}>
                 <Text style={styles.serviceTitle}>{item.title}</Text>
                 <Text style={styles.serviceSubtitle}>{item.subtitle}</Text>
@@ -129,17 +152,28 @@ const Home = () => {
             </View>
 
             {/* Location Card */}
-            <View style={styles.locationCard}>
+            <TouchableOpacity
+                onPress={() => router.push("/edit_address")}
+                style={styles.locationCard}
+            >
                 <Ionicons name="location-outline" size={22} color="#fff" />
                 <View>
                     <Text style={styles.locationText}>Baguio City</Text>
                     <Text style={styles.locationSubText}>2019 Sustainable</Text>
                 </View>
+
+                <View style={styles.profileIcon}>
+                </View>
+
                 <Ionicons name="chevron-down-outline" size={18} color="#fff" style={{ marginLeft: 'auto' }} />
-            </View>
+            </TouchableOpacity>
 
             {/* Scroll Content */}
-            <ScrollView showsVerticalScrollIndicator={false} style={styles.scrollContent}>
+            <ScrollView
+                ref={scrollViewRef}
+                showsVerticalScrollIndicator={false}
+                style={styles.scrollContent}
+            >
                 {/* No Service Planned Section */}
                 <View style={styles.servicePlannedCard}>
                     <View style={styles.servicePlannedLeft}>
@@ -168,38 +202,48 @@ const Home = () => {
                 />
 
                 {/* Best Tutors Section */}
-                <View style={styles.sectionHeader}>
-                    <Text style={styles.sectionTitle}>Best Tutors</Text>
-                    <TouchableOpacity>
-                        <Text style={styles.seeMoreText}>See more</Text>
-                    </TouchableOpacity>
-                </View>
+                <View
+                    ref={tutorsSectionRef}
+                    style={styles.sectionContainer}
+                >
+                    <View style={styles.sectionHeader}>
+                        <Text style={styles.sectionTitle}>Best Tutors</Text>
+                        <TouchableOpacity>
+                            <Text style={styles.seeMoreText}>See more</Text>
+                        </TouchableOpacity>
+                    </View>
 
-                <FlatList
-                    data={tutors}
-                    renderItem={renderTutorCard}
-                    keyExtractor={(item) => item.id}
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.tutorsList}
-                />
+                    <FlatList
+                        data={tutors}
+                        renderItem={renderTutorCard}
+                        keyExtractor={(item) => item.id}
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={styles.tutorsList}
+                    />
+                </View>
 
                 {/* Best Babysitters Section */}
-                <View style={styles.sectionHeader}>
-                    <Text style={styles.sectionTitle}>Best Babysitters</Text>
-                    <TouchableOpacity>
-                        <Text style={styles.seeMoreText}>See more</Text>
-                    </TouchableOpacity>
-                </View>
+                <View
+                    ref={babysittersSectionRef}
+                    style={styles.sectionContainer}
+                >
+                    <View style={styles.sectionHeader}>
+                        <Text style={styles.sectionTitle}>Best Babysitters</Text>
+                        <TouchableOpacity>
+                            <Text style={styles.seeMoreText}>See more</Text>
+                        </TouchableOpacity>
+                    </View>
 
-                <FlatList
-                    data={babysitters}
-                    renderItem={renderBabysitterCard}
-                    keyExtractor={(item) => item.id}
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.babysittersList}
-                />
+                    <FlatList
+                        data={babysitters}
+                        renderItem={renderBabysitterCard}
+                        keyExtractor={(item) => item.id}
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={styles.babysittersList}
+                    />
+                </View>
 
                 {/* Add some bottom padding */}
                 <View style={styles.bottomPadding} />
@@ -292,6 +336,11 @@ const styles = StyleSheet.create({
         paddingHorizontal: 20,
         marginTop: 10,
         marginBottom: 70
+    },
+
+    // Section Container for refs
+    sectionContainer: {
+        marginTop: 20,
     },
 
     // No Service Planned Section
