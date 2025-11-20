@@ -1,20 +1,37 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, FlatList, ScrollView, Modal, Alert } from "react-native";
+import {
+    View,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    StyleSheet,
+    FlatList,
+    ScrollView,
+    Modal,
+    SafeAreaView,
+    Image,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { db } from "../firebaseConfig";
-import { collection, getDocs } from "firebase/firestore";
+import { collection, getDocs, query, where } from "firebase/firestore";
+import { getAuth } from "firebase/auth";
 
 interface UserData {
     id: string;
     name: string;
-    type: string;
-    distance: string;
-    rate: string;
-    rating: number;
-    reviews: number;
-    bio: string;
-    status?: string; // Add employee status
+    role?: string; // raw role/type from DB
+    displayRole?: string; // normalized (Tutor | Babysitter | other)
+    latitude?: number;
+    longitude?: number;
+    distance?: string; // formatted like "0.85 km"
+    distanceKm?: number;
+    rate?: string;
+    rating?: number;
+    reviews?: number;
+    bio?: string;
+    status?: string;
+    picture?: string;
 }
 
 export default function SearchScreen() {
@@ -25,94 +42,199 @@ export default function SearchScreen() {
     const [searchQuery, setSearchQuery] = useState("");
     const [showFilterModal, setShowFilterModal] = useState(false);
 
+
+    // See-more modal state
+    const [seeMoreVisible, setSeeMoreVisible] = useState(false);
+    const [seeMoreTitle, setSeeMoreTitle] = useState("");
+    const [seeMoreList, setSeeMoreList] = useState<UserData[]>([]);
+
     // Filter states
     const [sortBy, setSortBy] = useState(""); // "distance", "price_low", "price_high", "rating"
     const [employeeStatus, setEmployeeStatus] = useState(""); // "available", "busy"
 
+    const auth = getAuth();
+    const loggedInEmail = auth.currentUser?.email || null;
+
+    // Haversine helpers
+    const deg2rad = (deg: number) => deg * (Math.PI / 180);
+
+    const getDistanceFromLatLonInKm = (
+        lat1: number,
+        lon1: number,
+        lat2: number,
+        lon2: number
+    ) => {
+        const R = 6371; // km
+        const dLat = deg2rad(lat2 - lat1);
+        const dLon = deg2rad(lon2 - lon1);
+        const a =
+            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(deg2rad(lat1)) *
+            Math.cos(deg2rad(lat2)) *
+            Math.sin(dLon / 2) *
+            Math.sin(dLon / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c; // km
+    };
+
+    const formatDistanceKm = (distanceKm: number | undefined) => {
+        if (typeof distanceKm !== "number" || isNaN(distanceKm)) return "—";
+        return `${distanceKm.toFixed(2)} km`; // always in km (2 decimals)
+    };
+
+    const parseRate = (rate?: string): number => {
+        if (!rate) return 0;
+        const n = parseInt(String(rate).replace(/[^0-9]/g, ""), 10);
+        return Number.isNaN(n) ? 0 : n;
+    };
+
+    const parseDistance = (distance?: string): number => {
+        if (!distance) return Infinity;
+        const n = parseFloat(distance);
+        return Number.isNaN(n) ? Infinity : n;
+    };
+
+    // Normalize role/type string to display role
+    const normalizeRole = (raw?: any) => {
+        if (!raw && raw !== "") return "";
+        const s = String(raw || "").toLowerCase().trim();
+        if (s.includes("tutor") || s.includes("tutoring")) return "Tutor";
+        if (s.includes("baby") || s.includes("babysit") || s.includes("babysitting"))
+            return "Babysitter";
+        if (s.length === 0) return "";
+        return s.charAt(0).toUpperCase() + s.slice(1);
+    };
+
     useEffect(() => {
-        const fetchProviders = async () => {
-            const querySnapshot = await getDocs(collection(db, "providers"));
-            const list: UserData[] = [];
-            querySnapshot.forEach((doc) => {
-                const data = doc.data() as UserData;
-                // Add random employee status for demo purposes
-                list.push({
-                    ...data,
-                    status: Math.random() > 0.5 ? "available" : "busy"
+        const fetchAll = async () => {
+            try {
+                // 1) fetch logged-in user's coords from `users` collection (if logged in)
+                let userLat: number | null = null;
+                let userLon: number | null = null;
+                if (loggedInEmail) {
+                    const q = query(collection(db, "users"), where("email", "==", loggedInEmail));
+                    const userSnap = await getDocs(q);
+                    if (!userSnap.empty) {
+                        const u = userSnap.docs[0].data() as any;
+                        if (typeof u.latitude === "number" && typeof u.longitude === "number") {
+                            userLat = u.latitude;
+                            userLon = u.longitude;
+                        }
+                    }
+                }
+
+                // 2) fetch providers
+                const providersSnap = await getDocs(collection(db, "providers"));
+                const list: UserData[] = providersSnap.docs.map((doc) => {
+                    const d = doc.data() as any;
+
+                    // compute average rating and count from reviews array if present
+                    let avgRating: number | undefined = undefined;
+                    let reviewCount = 0;
+                    if (Array.isArray(d.reviews) && d.reviews.length > 0) {
+                        const ratings = d.reviews
+                            .map((r: any) =>
+                                typeof r.rating === "number" ? r.rating : parseFloat(r.rating) || 0
+                            )
+                            .filter((v: number) => !Number.isNaN(v));
+                        reviewCount = ratings.length;
+                        if (reviewCount > 0) {
+                            const sum = ratings.reduce((acc: number, v: number) => acc + v, 0);
+                            avgRating = +(sum / reviewCount);
+                        }
+                    }
+
+                    // compute distance if user coords available and provider coords available
+                    let distanceKm: number | undefined = undefined;
+                    if (
+                        userLat !== null &&
+                        userLon !== null &&
+                        typeof d.latitude === "number" &&
+                        typeof d.longitude === "number"
+                    ) {
+                        distanceKm = getDistanceFromLatLonInKm(userLat, userLon, d.latitude, d.longitude);
+                    }
+
+                    const rawRole = d.role || d.type || "";
+                    const displayRole = normalizeRole(rawRole);
+
+                    return {
+                        id: doc.id,
+                        name: d.name || "",
+                        role: rawRole,
+                        displayRole,
+                        latitude: typeof d.latitude === "number" ? d.latitude : undefined,
+                        longitude: typeof d.longitude === "number" ? d.longitude : undefined,
+                        distance: formatDistanceKm(distanceKm),
+                        distanceKm: distanceKm,
+                        rate: d.rate ? String(d.rate) : undefined,
+                        rating:
+                            typeof avgRating === "number"
+                                ? +avgRating.toFixed(1)
+                                : typeof d.rating === "number"
+                                    ? d.rating
+                                    : undefined,
+                        reviews: reviewCount,
+                        bio: d.bio || undefined,
+                        status: Math.random() > 0.5 ? "available" : "busy",
+                        picture: d.picture || undefined,
+                    } as UserData;
                 });
-            });
-            setProviders(list);
-            setFilteredProviders(list);
+
+                setProviders(list);
+                setFilteredProviders(list);
+            } catch (err) {
+                console.error("Error fetching providers:", err);
+            }
         };
 
-        fetchProviders();
-    }, []);
+        fetchAll();
+    }, [loggedInEmail]);
 
-    // Parse rate to number for sorting
-    const parseRate = (rate: string): number => {
-        return parseInt(rate.replace(/[^0-9]/g, '')) || 0;
-    };
-
-    // Parse distance to number for sorting
-    const parseDistance = (distance: string): number => {
-        return parseFloat(distance) || 0;
-    };
-
-    // Filter providers based on category, search, and filters
+    // Filtering + sorting effect (reads providers -> produces filteredProviders)
     useEffect(() => {
-        let filtered = providers;
+        let filtered = providers.slice();
 
-        // Filter by category
+        // Category filter: use displayRole (normalized)
         if (activeCategory === "Tutor") {
-            filtered = filtered.filter(item => item.type === "Tutor");
-        } else if (activeCategory === "Baby sitter") {
-            filtered = filtered.filter(item => item.type === "Babysitter");
-        }
-
-        // Filter by search query
-        if (searchQuery) {
-            filtered = filtered.filter(item =>
-                item.name.toLowerCase().includes(searchQuery.toLowerCase())
+            filtered = filtered.filter(
+                (item) => (item.displayRole || "").toLowerCase() === "tutor"
+            );
+        } else if (activeCategory === "Babysitter") {
+            filtered = filtered.filter(
+                (item) => (item.displayRole || "").toLowerCase() === "babysitter"
             );
         }
 
-        // Filter by employee status
+        // Search filter (by name)
+        if (searchQuery.trim() !== "") {
+            const q = searchQuery.toLowerCase();
+            filtered = filtered.filter((item) => (item.name || "").toLowerCase().includes(q));
+        }
+
+        // Employee status filter
         if (employeeStatus) {
-            filtered = filtered.filter(item => item.status === employeeStatus);
+            filtered = filtered.filter((item) => item.status === employeeStatus);
         }
 
-        // Apply sorting
+        // Sorting
         if (sortBy === "distance") {
-            filtered = [...filtered].sort((a, b) =>
-                parseDistance(a.distance) - parseDistance(b.distance)
-            );
+            filtered = filtered.slice().sort((a, b) => parseDistance(a.distance) - parseDistance(b.distance));
         } else if (sortBy === "price_low") {
-            filtered = [...filtered].sort((a, b) =>
-                parseRate(a.rate) - parseRate(b.rate)
-            );
+            filtered = filtered.slice().sort((a, b) => parseRate(a.rate) - parseRate(b.rate));
         } else if (sortBy === "price_high") {
-            filtered = [...filtered].sort((a, b) =>
-                parseRate(b.rate) - parseRate(a.rate)
-            );
+            filtered = filtered.slice().sort((a, b) => parseRate(b.rate) - parseRate(a.rate));
         } else if (sortBy === "rating") {
-            filtered = [...filtered].sort((a, b) =>
-                b.rating - a.rating
-            );
+            filtered = filtered.slice().sort((a, b) => (b.rating || 0) - (a.rating || 0));
         }
 
         setFilteredProviders(filtered);
-    }, [activeCategory, searchQuery, providers, sortBy, employeeStatus]);
+    }, [providers, activeCategory, searchQuery, sortBy, employeeStatus]);
 
-    const categories = ["All", "Tutor", "Baby sitter"];
+    const categories = ["All", "Tutor", "Babysitter"];
 
-    const handleFilterPress = () => {
-        setShowFilterModal(true);
-    };
-
-    const applyFilters = () => {
-        setShowFilterModal(false);
-    };
-
+    const handleFilterPress = () => setShowFilterModal(true);
+    const applyFilters = () => setShowFilterModal(false);
     const resetFilters = () => {
         setSortBy("");
         setEmployeeStatus("");
@@ -121,97 +243,156 @@ export default function SearchScreen() {
 
     const getStatusColor = (status?: string) => {
         switch (status) {
-            case "available": return "#4CAF50";
-            case "busy": return "#FF9800";
-            default: return "#666";
+            case "available":
+                return "#4CAF50";
+            case "busy":
+                return "#FF9800";
+            default:
+                return "#666";
         }
     };
 
     const getStatusText = (status?: string) => {
         switch (status) {
-            case "available": return "Available";
-            case "busy": return "Busy";
-            default: return "Unknown";
+            case "available":
+                return "Available";
+            case "busy":
+                return "Busy";
+            default:
+                return "Unknown";
         }
     };
 
-    const renderProvider = ({ item }: { item: UserData }) => (
-        <TouchableOpacity
-            style={styles.card}
-            onPress={() => router.push({ pathname: "/details", params: { id: item.id } })}
-        >
-            <View style={styles.cardContent}>
-                <View style={styles.profileInfo}>
-                    <Ionicons name="person-circle-outline" size={50} color="#b58dde" />
-                    <View style={styles.textInfo}>
-                        <View style={styles.nameStatusRow}>
-                            <Text style={styles.name}>{item.name}</Text>
-                            <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) }]}>
-                                <Text style={styles.statusText}>{getStatusText(item.status)}</Text>
+    // Open see-more modal for a section (title, full list)
+    const openSeeMore = (title: string, data: UserData[]) => {
+        setSeeMoreTitle(title);
+        setSeeMoreList(data);
+        setSeeMoreVisible(true);
+    };
+
+    const closeSeeMore = () => {
+        setSeeMoreVisible(false);
+        setSeeMoreTitle("");
+        setSeeMoreList([]);
+    };
+
+    const renderProvider = ({ item }: { item: UserData }) => {
+        // Strip 'url()' wrapper from the database string if it exists
+        const base64String = item.picture
+            ? item.picture.replace(/^url\((['"]?)(.*)\1\)$/, '$2')
+            : null;
+
+        return (
+            <TouchableOpacity
+                style={styles.card}
+                onPress={() =>
+                    router.push({ pathname: "/details", params: { id: item.id } })
+                }
+            >
+                <View style={styles.cardContent}>
+                    <View style={styles.profileInfo}>
+                        {item.picture && base64String ? (
+                            <Image
+                                source={{ uri: base64String }}
+                                style={{ width: 50, height: 50, borderRadius: 25 }}
+                            />
+                        ) : (
+                            <Ionicons name="person-circle-outline" size={50} color="#b58dde" />
+                        )}
+
+                        <View style={styles.textInfo}>
+                            <View style={styles.nameStatusRow}>
+                                <Text style={styles.name}>{item.name}</Text>
+                                <View
+                                    style={[
+                                        styles.statusBadge,
+                                        { backgroundColor: getStatusColor(item.status) },
+                                    ]}
+                                >
+                                    <Text style={styles.statusText}>
+                                        {getStatusText(item.status)}
+                                    </Text>
+                                </View>
                             </View>
+
+                            {/* role pill */}
+                            {item.displayRole ? (
+                                <View style={styles.roleRow}>
+                                    <View style={styles.rolePill}>
+                                        <Text style={styles.rolePillText}>{item.displayRole}</Text>
+                                    </View>
+                                </View>
+                            ) : null}
+
+                            <View style={styles.distanceContainer}>
+                                <Ionicons name="location-outline" size={14} color="#666" />
+                                <Text style={styles.distance}>{item.distance}</Text>
+                            </View>
+
+                            <View style={styles.ratingContainer}>
+                                <Ionicons name="star" size={14} color="#f1c40f" />
+                                <Text style={styles.rating}>{item.rating ?? "—"}</Text>
+                                <Text style={styles.reviews}>{item.reviews ?? 0} reviews</Text>
+                            </View>
+
+                            <Text style={styles.rate}>
+                                {item.rate ? `₱${item.rate}/hour` : "—/hour"}
+                            </Text>
                         </View>
-                        <View style={styles.distanceContainer}>
-                            <Ionicons name="location-outline" size={14} color="#666" />
-                            <Text style={styles.distance}>{item.distance}</Text>
-                        </View>
-                        <View style={styles.ratingContainer}>
-                            <Ionicons name="star" size={14} color="#f1c40f" />
-                            <Text style={styles.rating}>{item.rating}</Text>
-                            <Text style={styles.reviews}>{item.reviews} reviews</Text>
-                        </View>
-                        <Text style={styles.rate}>{item.rate}/hour</Text>
                     </View>
+
+                    <Ionicons
+                        name="heart-outline"
+                        size={20}
+                        color="#E85D75"
+                        style={styles.heartIcon}
+                    />
                 </View>
-                <Ionicons name="heart-outline" size={20} color="#E85D75" style={styles.heartIcon} />
-            </View>
-        </TouchableOpacity>
-    );
+            </TouchableOpacity>
+        );
+    };
 
-    const renderHorizontalSection = (title: string, data: UserData[]) => (
-        <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>{title}</Text>
-                <TouchableOpacity>
-                    <Text style={styles.seeMore}>See more</Text>
-                </TouchableOpacity>
-            </View>
-            <FlatList
-                data={data}
-                renderItem={renderProvider}
-                keyExtractor={(item) => item.id}
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.horizontalList}
-            />
-        </View>
-    );
 
-    const renderVerticalSection = (title: string, data: UserData[]) => (
-        <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>{title}</Text>
-            </View>
-            <View style={styles.verticalList}>
-                {data.map((item) => (
-                    <View key={item.id}>
-                        {renderProvider({ item })}
-                    </View>
-                ))}
-            </View>
-        </View>
-    );
+    // compute recommended & closest from filteredProviders
+    const recommendedProviders = filteredProviders
+        .filter((p) => (p.rating || 0) >= 4.5)
+        .sort((a, b) => (b.rating || 0) - (a.rating || 0)); // highest rating first
 
-    // Get recommended providers
-    const recommendedProviders = filteredProviders.filter(item =>
-        item.rating >= 4.5
-    );
-
-    // Get closest providers
-    const closestProviders = [...filteredProviders]
+    const closestProviders = filteredProviders
+        .slice()
         .sort((a, b) => parseDistance(a.distance) - parseDistance(b.distance));
 
+    // when rendering horizontal section, pass sliced (<=5) items for UI and full list to see-more
+    const renderHorizontalSection = (title: string, data: UserData[]) => {
+        const display = data.slice(0, 5); // show up to 5
+        if (display.length === 0) return null;
+
+        return (
+            <View style={styles.section}>
+                <View style={styles.sectionHeader}>
+                    <Text style={styles.sectionTitle}>{title}</Text>
+                    <TouchableOpacity onPress={() => openSeeMore(title, data)}>
+                        <Text style={styles.seeMore}>See more</Text>
+                    </TouchableOpacity>
+                </View>
+
+                <FlatList
+                    data={display}
+                    renderItem={renderProvider}
+                    keyExtractor={(item) => item.id}
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.horizontalList}
+                />
+            </View>
+        );
+    };
+
+    // show vertical list only if All category OR user typed a search query
+    const shouldShowVertical = searchQuery.trim() !== "" || activeCategory === "All";
+
     return (
-        <View style={styles.container}>
+        <SafeAreaView style={styles.container}>
             {/* Search Bar */}
             <View style={styles.searchContainer}>
                 <View style={styles.searchRow}>
@@ -225,7 +406,6 @@ export default function SearchScreen() {
                             onChangeText={setSearchQuery}
                         />
                     </View>
-                    {/* Filter Button */}
                     <TouchableOpacity style={styles.filterButton} onPress={handleFilterPress}>
                         <Ionicons name="filter" size={24} color="#fff" />
                     </TouchableOpacity>
@@ -237,56 +417,50 @@ export default function SearchScreen() {
                 {categories.map((category) => (
                     <TouchableOpacity
                         key={category}
-                        style={[
-                            styles.categoryButton,
-                            activeCategory === category && styles.categoryButtonActive
-                        ]}
+                        style={[styles.categoryButton, activeCategory === category && styles.categoryButtonActive]}
                         onPress={() => setActiveCategory(category)}
                     >
-                        <Text style={[
-                            styles.categoryText,
-                            activeCategory === category && styles.categoryTextActive
-                        ]}>
+                        <Text style={[styles.categoryText, activeCategory === category && styles.categoryTextActive]}>
                             {category}
                         </Text>
                     </TouchableOpacity>
                 ))}
             </View>
 
-            {/* Main Content */}
+            {/* Content */}
             <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-                {/* Recommended Section - Horizontal */}
-                {recommendedProviders.length > 0 && renderHorizontalSection("Recommend", recommendedProviders)}
+                {/* Recommended and Close-to-you sections are always shown (but use filteredProviders,
+            so when category = Tutor they automatically only show tutors) */}
+                {renderHorizontalSection("Recommend", recommendedProviders)}
+                {renderHorizontalSection("Close to you", closestProviders)}
 
-                {/* Close to you Section - Horizontal */}
-                {closestProviders.length > 0 && renderHorizontalSection("Close to you", closestProviders)}
 
-                {/* All Providers Section - Show only when filtered (vertical) */}
-                {activeCategory !== "All" || searchQuery !== "" ? (
-                    <View style={styles.section}>
-                        <View style={styles.sectionHeader}>
-                            <Text style={styles.sectionTitle}>
-                                {activeCategory === "All" ? "Search Results" : activeCategory + "s"}
-                            </Text>
-                        </View>
-                        <View style={styles.verticalList}>
-                            {filteredProviders.map((item) => (
-                                <View key={item.id}>
-                                    {renderProvider({ item })}
-                                </View>
-                            ))}
-                        </View>
-                    </View>
-                ) : null}
             </ScrollView>
 
-            {/* Filter Modal */}
-            <Modal
-                visible={showFilterModal}
-                animationType="slide"
-                transparent={true}
-                onRequestClose={() => setShowFilterModal(false)}
-            >
+            {/* See more modal (bottom sheet style) */}
+            <Modal visible={seeMoreVisible} animationType="slide" transparent={true} onRequestClose={closeSeeMore}>
+                <View style={styles.seeMoreModalOverlay}>
+                    <View style={styles.seeMoreModal}>
+                        <View style={styles.seeMoreHeader}>
+                            <Text style={styles.seeMoreTitle}>{seeMoreTitle}</Text>
+                            <TouchableOpacity onPress={closeSeeMore}>
+                                <Ionicons name="close" size={22} color="#333" />
+                            </TouchableOpacity>
+                        </View>
+
+                        <FlatList
+                            data={seeMoreList}
+                            keyExtractor={(item) => item.id}
+                            renderItem={renderProvider}
+                            showsVerticalScrollIndicator={false}
+                            contentContainerStyle={{ paddingBottom: 30 }}
+                        />
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Filter Modal (unchanged behavior) */}
+            <Modal visible={showFilterModal} animationType="slide" transparent={true} onRequestClose={() => setShowFilterModal(false)}>
                 <View style={styles.modalContainer}>
                     <View style={styles.modalContent}>
                         <View style={styles.modalHeader}>
@@ -296,7 +470,7 @@ export default function SearchScreen() {
                             </TouchableOpacity>
                         </View>
 
-                        {/* Sort By Section */}
+                        {/* Sort By */}
                         <View style={styles.filterSection}>
                             <Text style={styles.filterSectionTitle}>Sort By</Text>
 
@@ -304,9 +478,7 @@ export default function SearchScreen() {
                                 style={[styles.filterOption, sortBy === "distance" && styles.filterOptionActive]}
                                 onPress={() => setSortBy(sortBy === "distance" ? "" : "distance")}
                             >
-                                <Text style={[styles.filterOptionText, sortBy === "distance" && styles.filterOptionTextActive]}>
-                                    Closest Distance
-                                </Text>
+                                <Text style={[styles.filterOptionText, sortBy === "distance" && styles.filterOptionTextActive]}>Closest Distance</Text>
                                 {sortBy === "distance" && <Ionicons name="checkmark" size={20} color="#b58dde" />}
                             </TouchableOpacity>
 
@@ -314,9 +486,7 @@ export default function SearchScreen() {
                                 style={[styles.filterOption, sortBy === "price_low" && styles.filterOptionActive]}
                                 onPress={() => setSortBy(sortBy === "price_low" ? "" : "price_low")}
                             >
-                                <Text style={[styles.filterOptionText, sortBy === "price_low" && styles.filterOptionTextActive]}>
-                                    Price: Low to High
-                                </Text>
+                                <Text style={[styles.filterOptionText, sortBy === "price_low" && styles.filterOptionTextActive]}>Price: Low to High</Text>
                                 {sortBy === "price_low" && <Ionicons name="checkmark" size={20} color="#b58dde" />}
                             </TouchableOpacity>
 
@@ -324,62 +494,41 @@ export default function SearchScreen() {
                                 style={[styles.filterOption, sortBy === "price_high" && styles.filterOptionActive]}
                                 onPress={() => setSortBy(sortBy === "price_high" ? "" : "price_high")}
                             >
-                                <Text style={[styles.filterOptionText, sortBy === "price_high" && styles.filterOptionTextActive]}>
-                                    Price: High to Low
-                                </Text>
+                                <Text style={[styles.filterOptionText, sortBy === "price_high" && styles.filterOptionTextActive]}>Price: High to Low</Text>
                                 {sortBy === "price_high" && <Ionicons name="checkmark" size={20} color="#b58dde" />}
                             </TouchableOpacity>
 
-                            <TouchableOpacity
-                                style={[styles.filterOption, sortBy === "rating" && styles.filterOptionActive]}
-                                onPress={() => setSortBy(sortBy === "rating" ? "" : "rating")}
-                            >
-                                <Text style={[styles.filterOptionText, sortBy === "rating" && styles.filterOptionTextActive]}>
-                                    Highest Rating
-                                </Text>
+                            <TouchableOpacity style={[styles.filterOption, sortBy === "rating" && styles.filterOptionActive]} onPress={() => setSortBy(sortBy === "rating" ? "" : "rating")}>
+                                <Text style={[styles.filterOptionText, sortBy === "rating" && styles.filterOptionTextActive]}>Highest Rating</Text>
                                 {sortBy === "rating" && <Ionicons name="checkmark" size={20} color="#b58dde" />}
                             </TouchableOpacity>
                         </View>
 
-                        {/* Employee Status Section */}
+                        {/* Employee Status */}
                         <View style={styles.filterSection}>
                             <Text style={styles.filterSectionTitle}>Employee Status</Text>
 
-                            <TouchableOpacity
-                                style={[styles.filterOption, employeeStatus === "available" && styles.filterOptionActive]}
-                                onPress={() => setEmployeeStatus(employeeStatus === "available" ? "" : "available")}
-                            >
-                                <Text style={[styles.filterOptionText, employeeStatus === "available" && styles.filterOptionTextActive]}>
-                                    Available
-                                </Text>
+                            <TouchableOpacity style={[styles.filterOption, employeeStatus === "available" && styles.filterOptionActive]} onPress={() => setEmployeeStatus(employeeStatus === "available" ? "" : "available")}>
+                                <Text style={[styles.filterOptionText, employeeStatus === "available" && styles.filterOptionTextActive]}>Available</Text>
                                 {employeeStatus === "available" && <Ionicons name="checkmark" size={20} color="#b58dde" />}
                             </TouchableOpacity>
 
-                            <TouchableOpacity
-                                style={[styles.filterOption, employeeStatus === "busy" && styles.filterOptionActive]}
-                                onPress={() => setEmployeeStatus(employeeStatus === "busy" ? "" : "busy")}
-                            >
-                                <Text style={[styles.filterOptionText, employeeStatus === "busy" && styles.filterOptionTextActive]}>
-                                    Busy
-                                </Text>
+                            <TouchableOpacity style={[styles.filterOption, employeeStatus === "busy" && styles.filterOptionActive]} onPress={() => setEmployeeStatus(employeeStatus === "busy" ? "" : "busy")}>
+                                <Text style={[styles.filterOptionText, employeeStatus === "busy" && styles.filterOptionTextActive]}>Busy</Text>
                                 {employeeStatus === "busy" && <Ionicons name="checkmark" size={20} color="#b58dde" />}
                             </TouchableOpacity>
                         </View>
 
-                        {/* Action Buttons */}
+                        {/* Actions */}
                         <View style={styles.modalActions}>
-                            <TouchableOpacity style={styles.resetButton} onPress={resetFilters}>
-                                <Text style={styles.resetButtonText}>Reset Filters</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity style={styles.applyButton} onPress={applyFilters}>
-                                <Text style={styles.applyButtonText}>Apply Filters</Text>
-                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.resetButton} onPress={resetFilters}><Text style={styles.resetButtonText}>Reset Filters</Text></TouchableOpacity>
+                            <TouchableOpacity style={styles.applyButton} onPress={applyFilters}><Text style={styles.applyButtonText}>Apply Filters</Text></TouchableOpacity>
                         </View>
                     </View>
                 </View>
             </Modal>
 
-            {/* Bottom Navigation */}
+            {/* Bottom Nav (unchanged) */}
             <View style={styles.bottomNav}>
                 <TouchableOpacity onPress={() => router.push("/home")}>
                     <Ionicons name="home-outline" size={24} color="#8e44ad" />
@@ -397,7 +546,7 @@ export default function SearchScreen() {
                     <Ionicons name="person-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
             </View>
-        </View>
+        </SafeAreaView>
     );
 }
 
@@ -502,9 +651,7 @@ const styles = StyleSheet.create({
     horizontalList: {
         paddingRight: 20,
     },
-    verticalList: {
-        // Vertical list styling
-    },
+    verticalList: {},
     card: {
         backgroundColor: "#fff",
         borderRadius: 12,
@@ -555,6 +702,21 @@ const styles = StyleSheet.create({
         color: "#fff",
         fontWeight: "bold",
     },
+    roleRow: {
+        marginBottom: 6,
+    },
+    rolePill: {
+        alignSelf: "flex-start",
+        backgroundColor: "#EDE4F7",
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 12,
+    },
+    rolePillText: {
+        fontSize: 12,
+        color: "#7B52AB",
+        fontWeight: "600",
+    },
     distanceContainer: {
         flexDirection: "row",
         alignItems: "center",
@@ -589,7 +751,6 @@ const styles = StyleSheet.create({
     heartIcon: {
         marginTop: 4,
     },
-    // Modal Styles
     modalContainer: {
         flex: 1,
         backgroundColor: "rgba(0,0,0,0.5)",
@@ -677,12 +838,38 @@ const styles = StyleSheet.create({
         fontWeight: "600",
     },
     bottomNav: {
-        flexDirection: 'row',
-        justifyContent: 'space-around',
-        alignItems: 'center',
+        flexDirection: "row",
+        justifyContent: "space-around",
+        alignItems: "center",
         paddingVertical: 10,
         borderTopWidth: 1,
-        borderColor: '#eee',
-        backgroundColor: '#fff'
+        borderColor: "#eee",
+        backgroundColor: "#fff",
+    },
+
+    /* See-more modal */
+    seeMoreModalOverlay: {
+        flex: 1,
+        backgroundColor: "rgba(0,0,0,0.4)",
+        justifyContent: "flex-end",
+    },
+    seeMoreModal: {
+        backgroundColor: "#fff",
+        borderTopLeftRadius: 18,
+        borderTopRightRadius: 18,
+        paddingHorizontal: 16,
+        paddingTop: 12,
+        maxHeight: "80%",
+    },
+    seeMoreHeader: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
+        paddingBottom: 8,
+    },
+    seeMoreTitle: {
+        fontSize: 18,
+        fontWeight: "700",
+        color: "#333",
     },
 });

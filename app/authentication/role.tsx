@@ -13,7 +13,7 @@ export default function RoleSelection() {
         if (selectedRole === "parent") {
             // Navigate to the parent/guardian flow (Location)
             router.push({
-                pathname: "/location",
+                pathname: "/authentication/location",
                 params: {
                     email,
                     password,
@@ -24,7 +24,7 @@ export default function RoleSelection() {
         } else if (selectedRole === "babysitting" || selectedRole === "tutoring") {
             // Navigate to the service provider flow (Location) - SAME AS PARENT
             router.push({
-                pathname: "/location",
+                pathname: "/authentication/location",
                 params: {
                     email,
                     password,
@@ -39,7 +39,7 @@ export default function RoleSelection() {
         <View style={styles.container}>
 
             {/* Back Button - Now goes back to terms_conditions */}
-            <TouchableOpacity onPress={() => router.push("/terms_conditions")} style={styles.backButton}>
+            <TouchableOpacity onPress={() => router.push("/authentication/terms_conditions")} style={styles.backButton}>
                 <Text style={styles.backText}>{"< Back"}</Text>
             </TouchableOpacity>
 
@@ -78,7 +78,7 @@ export default function RoleSelection() {
                 onPress={() => setSelectedRole("tutoring")}
             >
                 <Text style={styles.optionTitle}>Tutoring</Text>
-                <Text>- I want to help other people with their children's education.</Text>
+                <Text>- I want to help other people with their children&#39;s education.</Text>
             </TouchableOpacity>
 
             {/* Next Button */}

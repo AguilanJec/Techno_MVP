@@ -1,70 +1,235 @@
-import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
+// app/myBookings.tsx
+import React, { useEffect, useState } from 'react';
+import {
+    View,
+    Text,
+    TouchableOpacity,
+    StyleSheet,
+    ScrollView,
+    ActivityIndicator,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from "expo-router";
+import { useRouter } from 'expo-router';
+import { getAuth, onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
+import { db } from '../firebaseConfig';
+import {
+    collection,
+    query,
+    where,
+    onSnapshot,
+    orderBy,
+    Query,
+    QuerySnapshot,
+    DocumentData,
+} from 'firebase/firestore';
 
-interface Booking {
+type Booking = {
     id: string;
-    name: string;
+    name: string; // provider name
     distance: string;
     rating: number;
     reviews: number;
     price: number;
     favorite?: boolean;
     status: string;
-}
-
-const bookings: Booking[] = [
-    { id: '1', name: 'Peter Parker', distance: '0.5 km away', rating: 5.0, reviews: 12, price: 5, favorite: true, status: 'Pending' },
-    { id: '2', name: 'Steve Rogers', distance: '0.5 km away', rating: 5.0, reviews: 12, price: 5, favorite: true, status: 'Ongoing' },
-    { id: '3', name: 'Natasha Romanof', distance: '0.5 km away', rating: 5.0, reviews: 12, price: 5, favorite: true, status: 'Pending' },
-    { id: '4', name: 'Clint Barton', distance: '0.5 km away', rating: 5.0, reviews: 12, price: 5, favorite: true, status: 'Completed' },
-    { id: '5', name: 'Tony Stark', distance: '0.8 km away', rating: 4.8, reviews: 8, price: 6, favorite: false, status: 'Ongoing' },
-    { id: '6', name: 'Bruce Banner', distance: '1.2 km away', rating: 4.9, reviews: 15, price: 5, favorite: true, status: 'Pending' },
-];
+    providerId?: string;
+    // internal use: for sorting only (not required in UI)
+    _createdAt?: number;
+};
 
 const MyBookingsListScreen: React.FC = () => {
     const router = useRouter();
-    const [selectedTab, setSelectedTab] = useState('All');
+    const [selectedTab, setSelectedTab] = useState<'All' | 'Pending' | 'Ongoing'>('All');
+    const [bookings, setBookings] = useState<Booking[]>([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        const auth = getAuth();
+        // Keep track of unsubscribe functions from all listeners
+        const unsubscribers: Array<() => void> = [];
+
+        const cleanup = () => {
+            unsubscribers.forEach((u) => {
+                try { u(); } catch (e) { /* ignore */ }
+            });
+            unsubscribers.length = 0;
+        };
+
+        const mapDocToBooking = (doc: DocumentData) => {
+            const d = doc as any;
+            const rawStatus = (d.status ?? 'pending').toString().toLowerCase();
+            const statusLabel =
+                rawStatus === 'ongoing' ? 'Ongoing' : rawStatus === 'completed' ? 'Completed' : 'Pending';
+
+            // parse createdAt safely to a number for sorting
+            let createdAtNum = 0;
+            try {
+                if (d.createdAt) {
+                    // Firestore Timestamp has toMillis()
+                    if (typeof d.createdAt.toMillis === 'function') {
+                        createdAtNum = d.createdAt.toMillis();
+                    } else if (typeof d.createdAt === 'number') {
+                        createdAtNum = d.createdAt;
+                    } else {
+                        createdAtNum = new Date(d.createdAt).getTime();
+                    }
+                }
+            } catch (e) {
+                createdAtNum = 0;
+            }
+
+            return {
+                id: doc.id,
+                name: d.providerName ?? 'Provider',
+                distance: d.providerDistance ?? d.distance ?? '—',
+                rating: typeof d.providerRating === 'number' ? d.providerRating : 0,
+                reviews: typeof d.providerReviews === 'number' ? d.providerReviews : 0,
+                price:
+                    typeof d.ratePerHour === 'number'
+                        ? d.ratePerHour
+                        : parseFloat(d.ratePerHour || '0') || 0,
+                favorite: false,
+                status: statusLabel,
+                providerId: d.providerId,
+                _createdAt: createdAtNum,
+            } as Booking;
+        };
+
+        const handleSnapshot = (snap: QuerySnapshot<DocumentData>, docsMap: Map<string, Booking>) => {
+            snap.docs.forEach((doc) => {
+                const booking = mapDocToBooking({ id: doc.id, ...doc.data() });
+                docsMap.set(booking.id, booking);
+            });
+
+            // create array from map, sort by createdAt desc (fallback to id if no date)
+            const arr = Array.from(docsMap.values()).sort((a, b) => {
+                const ta = a._createdAt ?? 0;
+                const tb = b._createdAt ?? 0;
+                // newest first
+                if (ta === tb) return a.id.localeCompare(b.id);
+                return tb - ta;
+            });
+
+            // strip internal _createdAt before setting state
+            const cleaned = arr.map(({ _createdAt, ...rest }) => rest);
+            setBookings(cleaned);
+            setLoading(false);
+        };
+
+        const authUnsub = onAuthStateChanged(auth, (user) => {
+            // clear previous listeners if any
+            console.log("AUTH USER:", user?.uid, user?.email);
+            cleanup();
+            setBookings([]);
+            setLoading(true);
+
+            if (!user) {
+                setBookings([]);
+                setLoading(false);
+                return;
+            }
+
+            // Build queries: by userId (auth uid) and by userEmail (auth email).
+            const queries: Query<DocumentData>[] = [];
+
+            try {
+                if (user.uid) {
+                    queries.push(
+                        query(
+                            collection(db, 'appointments'),
+                            where('userId', '==', user.uid),
+                            orderBy('createdAt', 'desc')
+                        )
+                    );
+                }
+            } catch (e) {
+                // If orderBy on createdAt isn't valid for your data, remove orderBy above.
+            }
+
+            if (user.email) {
+                try {
+                    queries.push(
+                        query(
+                            collection(db, 'appointments'),
+                            where('userEmail', '==', user.email),
+                            orderBy('createdAt', 'desc')
+                        )
+                    );
+                } catch (e) {
+                    // ignore
+                }
+            }
+
+            // If we couldn't build any query, bail out
+            if (queries.length === 0) {
+                setLoading(false);
+                return;
+            }
+
+            // We'll merge results from all snapshots into a map keyed by doc.id
+            const docsMap = new Map<string, Booking>();
+
+            // subscribe to each query and keep unsubscribers
+            queries.forEach((q) => {
+                const unsub = onSnapshot(
+                    q,
+                    (snap) => {
+                        handleSnapshot(snap, docsMap);
+                    },
+                    (err) => {
+                        console.warn('appointments onSnapshot error:', err);
+                        // if error, still set loading to false but don't blow up
+                        setLoading(false);
+                    }
+                );
+                unsubscribers.push(unsub);
+            });
+        });
+
+        // make sure we unsubscribe auth listener on cleanup
+        return () => {
+            try { authUnsub(); } catch (e) { /* ignore */ }
+            cleanup();
+        };
+    }, []);
 
     // Filter bookings based on selected tab
-    const filteredBookings = bookings.filter(booking => {
-        if (selectedTab === 'All') {
-            return true; // Show all bookings
-        } else {
-            return booking.status.toLowerCase() === selectedTab.toLowerCase();
-        }
+    const filteredBookings = bookings.filter((booking) => {
+        if (selectedTab === 'All') return true;
+        return booking.status.toLowerCase() === selectedTab.toLowerCase();
     });
 
     return (
         <View style={styles.container}>
-            {/* TOP LAYER */}
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => router.push("/home")}>
+                <TouchableOpacity onPress={() => router.push('/home')}>
                     <Ionicons name="arrow-back" size={24} color="#fff" />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>My Bookings</Text>
                 <View style={{ width: 24 }} />
             </View>
 
-            {/* TABS */}
             <View style={styles.tabs}>
                 {['All', 'Pending', 'Ongoing'].map((tab) => (
                     <TouchableOpacity
                         key={tab}
-                        style={[styles.tab, selectedTab === tab && styles.tabActive]}
-                        onPress={() => setSelectedTab(tab)}
+                        style={[styles.tab, (selectedTab === tab) && styles.tabActive]}
+                        onPress={() => setSelectedTab(tab as any)}
                     >
-                        <Text style={[styles.tabText, selectedTab === tab && styles.tabTextActive]}>
+                        <Text style={[styles.tabText, (selectedTab === tab) && styles.tabTextActive]}>
                             {tab}
                         </Text>
                     </TouchableOpacity>
                 ))}
             </View>
 
-            {/* BOOKINGS LIST */}
             <ScrollView contentContainerStyle={styles.scroll}>
-                {filteredBookings.length > 0 ? (
+                {loading ? (
+                    <View style={{ padding: 40, alignItems: 'center' }}>
+                        <ActivityIndicator size="large" color="#b58dde" />
+                        <Text style={{ marginTop: 12, color: '#666' }}>Loading bookings…</Text>
+                    </View>
+                ) : filteredBookings.length > 0 ? (
                     filteredBookings.map((b) => (
                         <View key={b.id} style={styles.card}>
                             <View style={styles.leftSection}>
@@ -79,26 +244,42 @@ const MyBookingsListScreen: React.FC = () => {
                                 </View>
                                 <View style={styles.row}>
                                     <Ionicons name="star" size={14} color="#f1c40f" />
-                                    <Text style={styles.mutedText}>{b.rating} | {b.reviews} reviews</Text>
+                                    <Text style={styles.mutedText}>
+                                        {b.rating} | {b.reviews} reviews
+                                    </Text>
                                 </View>
 
                                 <View style={styles.actionsRow}>
-                                    <View style={[
-                                        styles.statusBox,
-                                        b.status === 'Pending' && styles.statusPending,
-                                        b.status === 'Ongoing' && styles.statusOngoing,
-                                        b.status === 'Completed' && styles.statusCompleted
-                                    ]}>
-                                        <Text style={[
-                                            styles.statusText,
-                                            b.status === 'Pending' && styles.statusTextPending,
-                                            b.status === 'Ongoing' && styles.statusTextOngoing,
-                                            b.status === 'Completed' && styles.statusTextCompleted
-                                        ]}>
+                                    <View
+                                        style={[
+                                            styles.statusBox,
+                                            b.status === 'Pending' && styles.statusPending,
+                                            b.status === 'Ongoing' && styles.statusOngoing,
+                                            b.status === 'Completed' && styles.statusCompleted,
+                                        ]}
+                                    >
+                                        <Text
+                                            style={[
+                                                styles.statusText,
+                                                b.status === 'Pending' && styles.statusTextPending,
+                                                b.status === 'Ongoing' && styles.statusTextOngoing,
+                                                b.status === 'Completed' && styles.statusTextCompleted,
+                                            ]}
+                                        >
                                             {b.status}
                                         </Text>
                                     </View>
-                                    <TouchableOpacity style={styles.messageBtn} onPress={() => router.push("/message")}>
+
+                                    <TouchableOpacity
+                                        style={styles.messageBtn}
+                                        onPress={() => {
+                                            if (b.providerId) {
+                                                router.push({ pathname: '/message', params: { providerId: b.providerId } });
+                                            } else {
+                                                router.push('/message');
+                                            }
+                                        }}
+                                    >
                                         <Ionicons name="chatbubble-outline" size={14} color="#fff" />
                                         <Text style={styles.messageText}>Message now</Text>
                                     </TouchableOpacity>
@@ -106,11 +287,11 @@ const MyBookingsListScreen: React.FC = () => {
                             </View>
 
                             <View style={styles.rightSection}>
-                                {b.favorite ? (
-                                    <Ionicons name="heart" size={20} color="red" />
-                                ) : (
-                                    <Ionicons name="heart-outline" size={20} color="#aaa" />
-                                )}
+                                <Ionicons
+                                    name={b.favorite ? 'heart' : 'heart-outline'}
+                                    size={20}
+                                    color={b.favorite ? 'red' : '#aaa'}
+                                />
                                 <Text style={styles.price}>₱{b.price}</Text>
                                 <Text style={styles.perHour}>per hour</Text>
                             </View>
@@ -123,28 +304,26 @@ const MyBookingsListScreen: React.FC = () => {
                         <Text style={styles.emptyStateSubText}>
                             {selectedTab === 'All'
                                 ? "You don't have any bookings yet"
-                                : `You don't have any ${selectedTab.toLowerCase()} bookings`
-                            }
+                                : `You don't have any ${selectedTab.toLowerCase()} bookings`}
                         </Text>
                     </View>
                 )}
             </ScrollView>
 
-            {/* BOTTOM NAVIGATION */}
             <View style={styles.bottomNav}>
-                <TouchableOpacity onPress={() => router.push("/home")}>
+                <TouchableOpacity onPress={() => router.push('/home')}>
                     <Ionicons name="home-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => router.push("/bookinglists")}>
+                <TouchableOpacity onPress={() => router.push('/bookinglists')}>
                     <Ionicons name="calendar-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => router.push("/search")}>
+                <TouchableOpacity onPress={() => router.push('/search')}>
                     <Ionicons name="search-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => router.push("/message")}>
+                <TouchableOpacity onPress={() => router.push('/message')}>
                     <Ionicons name="chatbubble-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => router.push("/account")}>
+                <TouchableOpacity onPress={() => router.push('/account')}>
                     <Ionicons name="person-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
             </View>

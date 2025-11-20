@@ -3,20 +3,26 @@ const path = require("path");
 
 const config = getDefaultConfig(__dirname);
 
-// Add .mjs support if needed
 config.resolver.sourceExts.push("mjs");
 
-// Custom resolver to block certain files only for web
 const originalResolveRequest = config.resolver.resolveRequest;
+
 config.resolver.resolveRequest = (context, moduleName, platform) => {
-    // Only block files for web
     if (platform === "web") {
+        // Block react-native-maps completely on web
+        if (moduleName.startsWith("react-native-maps")) {
+            return {
+                type: "sourceFile",
+                filePath: path.resolve(__dirname, "empty-web-stub.js"),
+            };
+        }
+
+        // Block any of your native-only screens
         if (
             moduleName.endsWith("map.native.tsx") ||
             moduleName.endsWith("edit_address.tsx") ||
             moduleName.endsWith("location.tsx")
         ) {
-            // Return a dummy empty module
             return {
                 type: "sourceFile",
                 filePath: path.resolve(__dirname, "empty-web-stub.js"),
@@ -24,10 +30,10 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
         }
     }
 
-    // fallback to default resolver
     if (originalResolveRequest) {
         return originalResolveRequest(context, moduleName, platform);
     }
+
     return context.resolveRequest(context, moduleName, platform);
 };
 

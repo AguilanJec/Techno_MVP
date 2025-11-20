@@ -159,7 +159,7 @@ const ServiceHome = () => {
 
             {/* Location Card */}
             <TouchableOpacity
-                onPress={() => router.push("/edit_address")}
+                onPress={() => router.push("/authentication/edit_address")}
                 style={styles.locationCard}
             >
                 <Ionicons name="location-outline" size={22} color="#fff" />

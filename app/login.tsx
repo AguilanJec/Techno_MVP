@@ -173,7 +173,7 @@ export default function LoginScreen() {
 
                 <View style={styles.registerRow}>
                     <Text style={styles.registerText}>Don’t have an account? </Text>
-                    <TouchableOpacity onPress={() => router.push("/register")}>
+                    <TouchableOpacity onPress={() => router.push("/authentication/register")}>
                         <Text style={styles.registerLink}>Register</Text>
                     </TouchableOpacity>
                 </View>

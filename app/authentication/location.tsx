@@ -1,5 +1,4 @@
-// location.tsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
     View,
     Text,
@@ -9,7 +8,6 @@ import {
     Image,
     ActivityIndicator,
     Alert,
-    Platform,
 } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import * as Location from "expo-location";
@@ -17,15 +15,23 @@ import MapView, { Marker, MapPressEvent, MarkerDragEndEvent } from "react-native
 
 export default function LocationPage() {
     const router = useRouter();
+    const mapRef = useRef<MapView | null>(null);
+
     const { email, password, confirmPassword, role } = useLocalSearchParams();
 
-    const DEFAULT = { latitude: 16.4023, longitude: 120.5960 }; // Baguio default
-    const [coords, setCoords] = useState<{ latitude: number; longitude: number }>(DEFAULT);
+    const DEFAULT = {
+        latitude: 16.4023,
+        longitude: 120.5960,
+        latitudeDelta: 0.01,
+        longitudeDelta: 0.01,
+    };
+
+    const [mapRegion, setMapRegion] = useState(DEFAULT);
     const [locationText, setLocationText] = useState("Baguio, Philippines");
     const [loading, setLoading] = useState(true);
     const [searchLoading, setSearchLoading] = useState(false);
 
-    // Get device location and reverse geocode to address
+    // Load user location
     useEffect(() => {
         (async () => {
             try {
@@ -35,10 +41,19 @@ export default function LocationPage() {
                     setLoading(false);
                     return;
                 }
-                const location = await Location.getCurrentPositionAsync({});
-                const { latitude, longitude } = location.coords;
-                setCoords({ latitude, longitude });
+
+                const loc = await Location.getCurrentPositionAsync({});
+                const { latitude, longitude } = loc.coords;
+
+                setMapRegion(prev => ({ ...prev, latitude, longitude }));
                 await reverseGeocode(latitude, longitude);
+
+                // Move camera without affecting zoom
+                mapRef.current?.animateCamera({
+                    center: { latitude, longitude },
+                    altitude: 1200,
+                });
+
             } catch (err) {
                 console.warn("Location error:", err);
             } finally {
@@ -47,61 +62,88 @@ export default function LocationPage() {
         })();
     }, []);
 
-    // Reverse geocode coordinates → human-readable address
+    // Reverse geocode
     const reverseGeocode = async (lat: number, lng: number) => {
         try {
             const [place] = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng });
             if (place) {
-                const address = `${place.name || ""}${place.street ? ", " + place.street : ""}${
+                const addr = `${place.name || ""}${place.street ? ", " + place.street : ""}${
                     place.city ? ", " + place.city : ""
                 }${place.region ? ", " + place.region : ""}${place.country ? ", " + place.country : ""}`;
-                setLocationText(address);
+                setLocationText(addr);
             } else {
                 setLocationText(`${lat.toFixed(6)}, ${lng.toFixed(6)}`);
             }
-        } catch (err) {
-            console.warn("Reverse geocode failed:", err);
+        } catch {
             setLocationText(`${lat.toFixed(6)}, ${lng.toFixed(6)}`);
         }
     };
 
-    // Forward geocode address → coordinates
+    // Forward geocoding (search)
     const geocodeAddress = async (address: string) => {
         setSearchLoading(true);
         try {
-            const [location] = await Location.geocodeAsync(address);
-            if (location) {
-                const { latitude, longitude } = location;
-                setCoords({ latitude, longitude });
+            const [result] = await Location.geocodeAsync(address);
+            if (result) {
+                const { latitude, longitude } = result;
+
+                setMapRegion(prev => ({ ...prev, latitude, longitude }));
                 await reverseGeocode(latitude, longitude);
+
+                // Move camera smoothly
+                mapRef.current?.animateCamera({
+                    center: { latitude, longitude },
+                    altitude: 1200,
+                });
+
             } else {
                 Alert.alert("Location not found");
             }
-        } catch (err) {
-            console.warn("Geocode failed:", err);
-            Alert.alert("Failed to find location");
+        } catch {
+            Alert.alert("Failed to search location");
         }
         setSearchLoading(false);
     };
 
+    // Tap on map
     const onMapPress = async (evt: MapPressEvent) => {
         const { latitude, longitude } = evt.nativeEvent.coordinate;
-        setCoords({ latitude, longitude });
+
+        setMapRegion(prev => ({ ...prev, latitude, longitude }));
         await reverseGeocode(latitude, longitude);
+
+        mapRef.current?.animateCamera({
+            center: { latitude, longitude },
+            altitude: 1200,
+        });
     };
 
+    // Drag marker
     const onMarkerDragEnd = async (evt: MarkerDragEndEvent) => {
         const { latitude, longitude } = evt.nativeEvent.coordinate;
-        setCoords({ latitude, longitude });
+
+        setMapRegion(prev => ({ ...prev, latitude, longitude }));
         await reverseGeocode(latitude, longitude);
+
+        mapRef.current?.animateCamera({
+            center: { latitude, longitude },
+            altitude: 1200,
+        });
     };
 
+    // Next screen
     const goNext = () => {
+        // Redirect based on role
+        const nextScreen =
+            role === "babysitting" || role === "tutoring"
+                ? "/authentication/edit_address_provider"
+                : "/authentication/edit_address";
+
         router.push({
-            pathname: "/edit_address",
+            pathname: nextScreen,
             params: {
-                latitude: coords.latitude.toString(),
-                longitude: coords.longitude.toString(),
+                latitude: mapRegion.latitude.toString(),
+                longitude: mapRegion.longitude.toString(),
                 address: locationText,
                 email,
                 password,
@@ -123,15 +165,21 @@ export default function LocationPage() {
     return (
         <View style={styles.container}>
             <TouchableOpacity
-                onPress={() => router.push({ pathname: "/terms_conditions", params: { email, password, confirmPassword, role } })}
+                onPress={() =>
+                    router.push({
+                        pathname: "/authentication/terms_conditions",
+                        params: { email, password, confirmPassword, role },
+                    })
+                }
                 style={styles.backButton}
             >
                 <Text style={styles.backText}>{"< Back"}</Text>
             </TouchableOpacity>
 
-            <Image source={require("../assets/images/location_guy.png")} style={styles.headerImage} />
+            <Image source={require("../../assets/images/location_guy.png")} style={styles.headerImage} />
             <Text style={styles.title}>Pinpoint your location</Text>
 
+            {/* Search bar */}
             <View style={styles.searchContainer}>
                 <TextInput
                     value={locationText}
@@ -144,24 +192,19 @@ export default function LocationPage() {
                 </TouchableOpacity>
             </View>
 
+            {/* MAP */}
             <View style={styles.mapContainer}>
                 <MapView
+                    ref={mapRef}
                     style={styles.map}
-                    initialRegion={{
-                        latitude: coords.latitude,
-                        longitude: coords.longitude,
-                        latitudeDelta: 0.05,
-                        longitudeDelta: 0.05,
-                    }}
-                    region={{
-                        latitude: coords.latitude,
-                        longitude: coords.longitude,
-                        latitudeDelta: 0.05,
-                        longitudeDelta: 0.05,
-                    }}
+                    initialRegion={mapRegion}   // ← No zoom reset!
                     onPress={onMapPress}
                 >
-                    <Marker coordinate={coords} draggable onDragEnd={onMarkerDragEnd} />
+                    <Marker
+                        coordinate={mapRegion}
+                        draggable
+                        onDragEnd={onMarkerDragEnd}
+                    />
                 </MapView>
             </View>
 

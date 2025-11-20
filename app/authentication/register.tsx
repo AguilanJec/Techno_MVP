@@ -87,7 +87,7 @@ export default function RegisterScreen() {
         if (valid) {
             // Navigate to Role Selection page with user info
             router.push({
-                pathname: "/role",
+                pathname: "/authentication/role",
                 params: {
                     email: String(email),
                     password: String(password),
@@ -104,7 +104,7 @@ export default function RegisterScreen() {
             </TouchableOpacity>
 
             <Image
-                source={require("../assets/Hirayag_Logo.png")}
+                source={require("../../assets/Hirayag_Logo.png")}
                 style={styles.logo}
                 resizeMode="contain"
             />
@@ -166,7 +166,7 @@ export default function RegisterScreen() {
 
                     // Navigate to Terms & Conditions page with user info
                     router.push({
-                        pathname: "/terms_conditions",
+                        pathname: "/authentication/terms_conditions",
                         params: {
                             email,
                             password,
@@ -187,10 +187,10 @@ export default function RegisterScreen() {
             <Text style={styles.socialText}>sign up with</Text>
             <View style={styles.socialContainer}>
                 <TouchableOpacity style={styles.socialButton}>
-                    <Image source={require("../assets/Facebook_Logo.png")} style={styles.socialIcon} />
+                    <Image source={require("../../assets/Facebook_Logo.png")} style={styles.socialIcon} />
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.socialButton}>
-                    <Image source={require("../assets/Google_Logo.png")} style={styles.socialIcon} />
+                    <Image source={require("../../assets/Google_Logo.png")} style={styles.socialIcon} />
                 </TouchableOpacity>
             </View>
 

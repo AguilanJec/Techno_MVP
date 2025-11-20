@@ -13,7 +13,7 @@ import {
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { createUserWithEmailAndPassword, fetchSignInMethodsForEmail } from "firebase/auth";
 import { doc, setDoc } from "firebase/firestore";
-import { auth, db } from "../firebaseConfig";
+import { auth, db } from "../../firebaseConfig";
 import * as Location from "expo-location";
 
 export default function EditAddress() {
@@ -29,8 +29,8 @@ export default function EditAddress() {
     const lngParam = getParamString(params.longitude);
 
     // Form fields
-    const [name, setName] = useState("Tony Stark");
-    const [phone, setPhone] = useState("9012398765");
+    const [name, setName] = useState("");
+    const [phone, setPhone] = useState("");
     const [addressDetails, setAddressDetails] = useState("");
     const [addressDisplay, setAddressDisplay] = useState(locationParam || "No location selected");
 
@@ -168,7 +168,7 @@ export default function EditAddress() {
 
     return (
         <ScrollView style={{ flex: 1, backgroundColor: "#EDE0FF" }}>
-            <TouchableOpacity onPress={() => router.push("/location")} style={styles.backButton}>
+            <TouchableOpacity onPress={() => router.push("/authentication/location")} style={styles.backButton}>
                 <Text style={styles.backText}>{"< Back"}</Text>
             </TouchableOpacity>
 

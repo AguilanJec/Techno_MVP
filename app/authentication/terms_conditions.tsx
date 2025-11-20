@@ -1,5 +1,6 @@
 // terms_condition.tsx
 import React from "react";
+import {Alert} from "react-native";
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 
@@ -9,7 +10,7 @@ export default function TermsConditions() {
     return (
         <View style={styles.container}>
             {/* Back Button */}
-            <TouchableOpacity onPress={() => router.push("/register")} style={styles.backButton}>
+            <TouchableOpacity onPress={() => router.push("/authentication/register")} style={styles.backButton}>
                 <Text style={styles.backText}>{"< Back"}</Text>
             </TouchableOpacity>
 
@@ -67,11 +68,11 @@ export default function TermsConditions() {
                 <TouchableOpacity
                     style={[styles.button, styles.decline]}
                     onPress={() => {
-                        // Navigate to Location page with parameters
-                        router.replace({
-                            pathname: "/location",
-                            params: { email, password, confirmPassword, role } // Make sure these are passed
-                        });
+                        Alert.alert(
+                            "Terms Required",
+                            "You must accept the Terms & Conditions before registering.",
+                            [{ text: "OK" }]
+                        );
                     }}
                 >
                     <Text style={styles.declineText}>Decline</Text>
@@ -82,7 +83,7 @@ export default function TermsConditions() {
                     onPress={() => {
                         // Navigate to Role Selection page with parameters
                         router.replace({
-                            pathname: "/role",
+                            pathname: "/authentication/role",
                             params: { email, password, confirmPassword } // Pass the params
                         });
                     }}
