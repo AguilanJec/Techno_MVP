@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
+import * as DocumentPicker from 'expo-document-picker';
 import { Audio } from "expo-av";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -23,8 +24,10 @@ interface Message {
     type: "text" | "image" | "voice" | "file";
     imageUri?: string;
     voiceUri?: string;
-    fileUri?: string;
     fileName?: string;
+    fileSize?: number;
+    fileType?: string;
+    fileUri?: string;
     duration?: number;
 }
 
@@ -137,6 +140,69 @@ export default function ChatScreen() {
         }, 1000 + Math.random() * 2000); // Random delay between 1-3 seconds
     };
 
+    // File picker - Now functional!
+    const pickFile = async () => {
+        try {
+            const result = await DocumentPicker.getDocumentAsync({
+                type: '*/*', // All file types
+                copyToCacheDirectory: true,
+                multiple: false,
+            });
+
+            if (result.canceled) {
+                return; // User canceled the picker
+            }
+
+            const file = result.assets[0];
+
+            if (file) {
+                const fileSizeInKB = Math.round((file.size || 0) / 1024);
+                const fileType = file.mimeType || 'Unknown type';
+
+                const newMsg: Message = {
+                    id: Date.now().toString(),
+                    text: "Attached a file",
+                    isUser: true,
+                    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                    type: "file",
+                    fileName: file.name,
+                    fileSize: fileSizeInKB,
+                    fileType: fileType,
+                    fileUri: file.uri,
+                };
+                setMessages(prev => [...prev, newMsg]);
+
+                // Auto-response to file
+                sendAutoResponse("file");
+            }
+        } catch (error) {
+            console.error("Error picking file:", error);
+            Alert.alert("Error", "Failed to pick file. Please try again.");
+        }
+    };
+
+    // Get file icon based on file type
+    const getFileIcon = (fileType?: string) => {
+        if (!fileType) return "document";
+
+        if (fileType.includes('pdf')) return "document-text";
+        if (fileType.includes('word') || fileType.includes('document')) return "document-text";
+        if (fileType.includes('excel') || fileType.includes('spreadsheet')) return "document";
+        if (fileType.includes('image')) return "image";
+        if (fileType.includes('video')) return "videocam";
+        if (fileType.includes('audio')) return "musical-notes";
+        if (fileType.includes('zip') || fileType.includes('compressed')) return "archive";
+
+        return "document";
+    };
+
+    // Format file size
+    const formatFileSize = (sizeInKB?: number) => {
+        if (!sizeInKB) return "Unknown size";
+        if (sizeInKB < 1024) return `${sizeInKB} KB`;
+        return `${(sizeInKB / 1024).toFixed(1)} MB`;
+    };
+
     const startRecording = async () => {
         try {
             const permission = await Audio.requestPermissionsAsync();
@@ -206,21 +272,6 @@ export default function ChatScreen() {
         } catch (error) {
             console.error('Error playing sound', error);
         }
-    };
-
-    const pickFile = async () => {
-        Alert.alert("File Picker", "File picker would open here");
-
-        const newMsg: Message = {
-            id: Date.now().toString(),
-            text: "Check out this document",
-            isUser: true, // User's file on right side
-            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            type: "file",
-            fileName: "document.pdf",
-        };
-        setMessages(prev => [...prev, newMsg]);
-        sendAutoResponse("file");
     };
 
     const pickImage = async () => {
@@ -305,6 +356,50 @@ export default function ChatScreen() {
             styles.messageBubble,
             item.isUser ? styles.userBubble : styles.otherBubble
         ]}>
+            {/* File Message - Updated with functional file info */}
+            {item.type === "file" && (
+                <TouchableOpacity
+                    style={styles.fileMessage}
+                    onPress={() => {
+                        if (item.fileUri) {
+                            Alert.alert(
+                                "File Information",
+                                `File: ${item.fileName}\nSize: ${formatFileSize(item.fileSize)}\nType: ${item.fileType || 'Unknown'}`,
+                                [{ text: "OK" }]
+                            );
+                        }
+                    }}
+                >
+                    <Ionicons
+                        name={getFileIcon(item.fileType) as any}
+                        size={32}
+                        color={item.isUser ? "#fff" : "#4B3C88"}
+                    />
+                    <View style={styles.fileInfo}>
+                        <Text style={[
+                            styles.fileName,
+                            item.isUser ? styles.userFileText : styles.otherFileText
+                        ]}>
+                            {item.fileName}
+                        </Text>
+                        <Text style={[
+                            styles.fileDetails,
+                            item.isUser ? styles.userFileText : styles.otherFileText
+                        ]}>
+                            {formatFileSize(item.fileSize)} • {item.fileType || 'File'}
+                        </Text>
+                        {item.text && (
+                            <Text style={[
+                                styles.fileText,
+                                item.isUser ? styles.userFileText : styles.otherFileText
+                            ]}>
+                                {item.text}
+                            </Text>
+                        )}
+                    </View>
+                </TouchableOpacity>
+            )}
+
             {/* Voice Message */}
             {item.type === "voice" && (
                 <TouchableOpacity
@@ -341,27 +436,6 @@ export default function ChatScreen() {
                             <Text style={styles.voiceDuration}>{item.duration}s</Text>
                         </>
                     )}
-                </TouchableOpacity>
-            )}
-
-            {/* File Message */}
-            {item.type === "file" && (
-                <TouchableOpacity style={styles.fileMessage}>
-                    <Ionicons name="document-attach" size={24} color={item.isUser ? "#fff" : "#4B3C88"} />
-                    <View style={styles.fileInfo}>
-                        <Text style={[
-                            styles.fileName,
-                            item.isUser ? styles.userFileText : styles.otherFileText
-                        ]}>
-                            {item.fileName}
-                        </Text>
-                        <Text style={[
-                            styles.fileText,
-                            item.isUser ? styles.userFileText : styles.otherFileText
-                        ]}>
-                            {item.text}
-                        </Text>
-                    </View>
                 </TouchableOpacity>
             )}
 
@@ -446,7 +520,7 @@ export default function ChatScreen() {
 
             {/* Message Input */}
             <View style={styles.inputContainer}>
-                {/* File button */}
+                {/* File button - Now functional! */}
                 <TouchableOpacity onPress={pickFile} style={styles.iconButton}>
                     <Ionicons name="attach" size={24} color="#4B3C88" />
                 </TouchableOpacity>
@@ -454,6 +528,11 @@ export default function ChatScreen() {
                 {/* Camera button */}
                 <TouchableOpacity onPress={takePhoto} style={styles.iconButton}>
                     <Ionicons name="camera" size={24} color="#4B3C88" />
+                </TouchableOpacity>
+
+                {/* Gallery button */}
+                <TouchableOpacity onPress={pickImage} style={styles.iconButton}>
+                    <Ionicons name="image" size={24} color="#4B3C88" />
                 </TouchableOpacity>
 
                 {/* Voice message button */}
@@ -631,11 +710,12 @@ const styles = StyleSheet.create({
         color: "#fff",
         fontWeight: '500',
     },
-    // File Message Styles
+    // File Message Styles - Updated
     fileMessage: {
         flexDirection: "row",
         alignItems: "center",
         padding: 8,
+        minWidth: 200,
     },
     fileInfo: {
         flex: 1,
@@ -645,6 +725,11 @@ const styles = StyleSheet.create({
         fontSize: 14,
         fontWeight: "bold",
         marginBottom: 2,
+    },
+    fileDetails: {
+        fontSize: 12,
+        marginBottom: 4,
+        opacity: 0.8,
     },
     fileText: {
         fontSize: 12,
