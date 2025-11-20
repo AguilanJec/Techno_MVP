@@ -18,6 +18,10 @@ import {
 } from "firebase/auth";
 import { FirebaseError } from "firebase/app";
 import { auth } from "../firebaseConfig";
+// --- ADD THESE IMPORTS ---
+import { getDoc, doc } from "firebase/firestore"; // Import getDoc and doc
+import { db } from "../firebaseConfig"; // Import your db instance
+// --- END OF NEW IMPORTS ---
 import * as WebBrowser from "expo-web-browser";
 import * as Google from "expo-auth-session/providers/google";
 
@@ -27,10 +31,8 @@ export default function LoginScreen() {
     const router = useRouter();
     const navigation = useNavigation();
 
-    const [email, setEmail] = useState("");
-    const [password, setPassword] = useState("");
-
     // --- GOOGLE SIGN-IN CONFIG ---
+    // Make sure promptAsync is destructured here
     const [request, response, promptAsync] = Google.useAuthRequest({
         webClientId: "308001835959-7m2cefe3rpp9l1lj0m3v2veo0aeai1da.apps.googleusercontent.com",
         androidClientId: "308001835959-1hpdmie9dfth2h7rvkdsuujetg13kfis.apps.googleusercontent.com",
@@ -44,7 +46,9 @@ export default function LoginScreen() {
             signInWithCredential(auth, credential)
                 .then(() => {
                     Alert.alert("Success", "Logged in with Google!");
-                    router.replace("/");
+                    // You might want to fetch user role here too for Google login
+                    // For now, default to home or implement role check
+                    router.replace("/home");
                 })
                 .catch((error) => {
                     console.error(error);
@@ -52,6 +56,9 @@ export default function LoginScreen() {
                 });
         }
     }, [response]);
+
+    const [email, setEmail] = useState("");
+    const [password, setPassword] = useState("");
 
     // --- EMAIL/PASSWORD LOGIN ---
     const handleLogin = async () => {
@@ -62,10 +69,30 @@ export default function LoginScreen() {
 
         try {
             await signInWithEmailAndPassword(auth, email, password);
-            Alert.alert("Success", "You are now logged in!");
 
+            // After successful login, fetch user data to determine role
+            const user = auth.currentUser;
+            if (user) {
+                const userDoc = await getDoc(doc(db, "users", user.uid)); // Use imported getDoc, doc, and db
+                if (userDoc.exists()) {
+                    const userData = userDoc.data();
+                    const userRole = userData.role; // Assuming you saved the role in Firestore
 
-            router.push("/home"); // ✅ Redirect after login
+                    if (userRole === "babysitting" || userRole === "tutoring") {
+                        router.push("/service_home"); // Navigate service providers to their home
+                    } else {
+                        // Default to parent home or handle other roles if needed
+                        router.push("/home");
+                    }
+                } else {
+                    // Handle case where user doc doesn't exist
+                    Alert.alert("Error", "User data not found. Please contact support.");
+                }
+            } else {
+                // This shouldn't happen after successful signIn, but just in case
+                Alert.alert("Error", "Login failed. Please try again.");
+            }
+
         } catch (error) {
             console.error("Login error:", error);
 
@@ -136,6 +163,7 @@ export default function LoginScreen() {
                 <Text style={styles.orText}>or sign in with</Text>
 
                 <View style={styles.socialRow}>
+                    {/* Make sure promptAsync is used here */}
                     <TouchableOpacity style={styles.socialButton} onPress={() => promptAsync()}>
                         <Image
                             source={require("../assets/Google_Logo.png")}

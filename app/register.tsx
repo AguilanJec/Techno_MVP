@@ -148,7 +148,32 @@ export default function RegisterScreen() {
 
             <TouchableOpacity
                 style={styles.signUpButton}
-                onPress={handleSignUp}
+                onPress={() => {
+                    if (!email || !password || !confirmPassword) {
+                        Alert.alert("Error", "Please fill out all fields.");
+                        return;
+                    }
+
+                    if (password.length < 6) {
+                        Alert.alert("Password Too Weak", "Password must be at least 6 characters long.");
+                        return;
+                    }
+
+                    if (password !== confirmPassword) {
+                        Alert.alert("Error", "Passwords do not match.");
+                        return;
+                    }
+
+                    // Navigate to Terms & Conditions page with user info
+                    router.push({
+                        pathname: "/terms_conditions",
+                        params: {
+                            email,
+                            password,
+                            confirmPassword,
+                        },
+                    });
+                }}
             >
                 <Text style={styles.signUpText}>Sign Up</Text>
             </TouchableOpacity>
