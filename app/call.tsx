@@ -12,7 +12,8 @@ import { Ionicons } from "@expo/vector-icons";
 export default function CallScreen() {
     const router = useRouter();
     const params = useLocalSearchParams();
-    const userName = params.user as string || "Steve Rogers";
+    const providerName = params.providerName as string || "Tutor";
+    const providerId = params.providerId as string;
 
     const [callDuration, setCallDuration] = useState(0);
     const [isMuted, setIsMuted] = useState(false);
@@ -51,18 +52,16 @@ export default function CallScreen() {
 
     return (
         <SafeAreaView style={styles.container}>
-            {/* Header with Time */}
             <View style={styles.header}>
                 <Text style={styles.headerTime}>12:00</Text>
                 <Text style={styles.callingVia}>Calling via Hirayag</Text>
             </View>
 
-            {/* Call Info */}
             <View style={styles.callInfo}>
                 <View style={styles.avatarContainer}>
                     <View style={styles.avatar}>
                         <Text style={styles.avatarText}>
-                            {userName.split(" ").map((n: string) => n[0]).join("")}
+                            {providerName.split(" ").map((n: string) => n[0]).join("")}
                         </Text>
                     </View>
                     <View style={styles.callStatus}>
@@ -71,11 +70,10 @@ export default function CallScreen() {
                     </View>
                 </View>
 
-                <Text style={styles.userName}>{userName}</Text>
+                <Text style={styles.userName}>{providerName}</Text>
                 <Text style={styles.callTimer}>{formatTime(callDuration)}</Text>
             </View>
 
-            {/* Call Controls */}
             <View style={styles.controlsContainer}>
                 <TouchableOpacity
                     style={[styles.controlButton, isMuted && styles.controlButtonActive]}
@@ -129,7 +127,6 @@ export default function CallScreen() {
                 </TouchableOpacity>
             </View>
 
-            {/* End Call Button */}
             <View style={styles.endCallContainer}>
                 <TouchableOpacity
                     style={styles.endCallButton}
@@ -229,9 +226,7 @@ const styles = StyleSheet.create({
         alignItems: "center",
         minWidth: 70,
     },
-    controlButtonActive: {
-        // Active state styling
-    },
+    controlButtonActive: {},
     controlIconContainer: {
         width: 60,
         height: 60,

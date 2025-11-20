@@ -12,11 +12,10 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { collection, query, where, getDocs, onSnapshot, orderBy } from "firebase/firestore";
-import { db } from "../firebaseConfig"; // Adjust path as needed
+import { collection, query, where, getDocs, onSnapshot, orderBy, addDoc } from "firebase/firestore";
+import { db } from "../firebaseConfig";
 import { getAuth } from "firebase/auth";
 
-// Types based on your Firebase structure
 interface Provider {
     id: string;
     name: string;
@@ -31,6 +30,7 @@ interface Provider {
 interface Conversation {
     id: string;
     participants: string[];
+    participantNames: string[];
     lastMessage: string;
     lastMessageTime: any;
     unread: boolean;
@@ -47,7 +47,6 @@ export default function MessageScreen() {
     const [loading, setLoading] = useState(true);
     const [contactsLoading, setContactsLoading] = useState(false);
 
-    // Get current user
     useEffect(() => {
         const auth = getAuth();
         const user = auth.currentUser;
@@ -61,7 +60,6 @@ export default function MessageScreen() {
         }
     }, []);
 
-    // Fetch all providers/tutors from your "providers" collection
     const fetchProviders = async () => {
         try {
             setContactsLoading(true);
@@ -93,7 +91,6 @@ export default function MessageScreen() {
         }
     };
 
-    // Real-time listener for conversations
     const setupConversationsListener = (currentUserId: string) => {
         try {
             const conversationsQuery = query(
@@ -111,6 +108,7 @@ export default function MessageScreen() {
                         conversationsData.push({
                             id: doc.id,
                             participants: data.participants || [],
+                            participantNames: data.participantNames || [],
                             lastMessage: data.lastMessage || "No messages yet",
                             lastMessageTime: data.lastMessageTime,
                             unread: data.unread || false,
@@ -134,73 +132,72 @@ export default function MessageScreen() {
         }
     };
 
-    // Handle contact press - navigate to chat
-    const handleContactPress = async (providerId: string, providerName: string) => {
+    const startConversation = async (providerId: string, providerName: string) => {
         if (!currentUser) return;
 
         try {
-            // Check if conversation already exists with this provider
-            const conversationsQuery = query(
+            const existingConvQuery = query(
                 collection(db, "conversations"),
                 where("participants", "array-contains", currentUser.uid)
             );
 
-            const querySnapshot = await getDocs(conversationsQuery);
+            const querySnapshot = await getDocs(existingConvQuery);
             let existingConversation: Conversation | null = null;
 
             querySnapshot.forEach((doc) => {
                 const conversation = doc.data() as Conversation;
-                // Check if this conversation includes the provider
-                const providerConversation = conversation.participants.includes(providerId);
-                if (providerConversation) {
+                if (conversation.participants.includes(providerId)) {
                     // @ts-ignore
                     existingConversation = { id: doc.id, ...conversation };
                 }
             });
 
             if (existingConversation) {
-                // Navigate to existing conversation
                 // @ts-ignore
-                router.push(`/chat?conversationId=${existingConversation.id}&providerName=${encodeURIComponent(providerName)}`);
+                router.push(`/chat?conversationId=${existingConversation.id}&providerName=${encodeURIComponent(providerName)}&providerId=${providerId}`);
             } else {
-                // Navigate to new chat with provider info
-                router.push(`/chat?providerId=${providerId}&providerName=${encodeURIComponent(providerName)}`);
+                const newConversation = {
+                    participants: [currentUser.uid, providerId],
+                    participantNames: [currentUser.displayName || "User", providerName],
+                    lastMessage: "Conversation started",
+                    lastMessageTime: new Date(),
+                    unread: false,
+                    lastMessageSender: currentUser.uid
+                };
+
+                const docRef = await addDoc(collection(db, "conversations"), newConversation);
+                router.push(`/chat?conversationId=${docRef.id}&providerName=${encodeURIComponent(providerName)}&providerId=${providerId}`);
             }
 
             setModalVisible(false);
             setSearchQuery("");
         } catch (error) {
-            console.error("Error handling contact press:", error);
+            console.error("Error starting conversation:", error);
         }
     };
 
-    // Filter conversations based on provider names
     const filteredConversations = conversations.filter(conversation => {
         if (!searchQuery) return true;
 
-        const otherParticipantId = conversation.participants.find(id => id !== currentUser?.uid);
-        const provider = providers.find(p => p.id === otherParticipantId);
-        const providerName = provider?.name || "";
+        const otherParticipantName = conversation.participantNames.find((name, index) =>
+            conversation.participants[index] !== currentUser?.uid
+        ) || "";
 
-        return providerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        return otherParticipantName.toLowerCase().includes(searchQuery.toLowerCase()) ||
             conversation.lastMessage.toLowerCase().includes(searchQuery.toLowerCase());
     });
 
-    // Filter providers for modal
     const filteredProviders = providers.filter(provider =>
         provider.name.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
-    // Get provider name by ID
-    const getProviderName = (participants: string[]) => {
+    const getProviderName = (participants: string[], participantNames: string[]) => {
         if (!currentUser || !participants) return "Unknown Provider";
 
-        const otherParticipantId = participants.find(id => id !== currentUser.uid);
-        const provider = providers.find(p => p.id === otherParticipantId);
-        return provider?.name || "Unknown Provider";
+        const otherParticipantIndex = participants.findIndex(id => id !== currentUser.uid);
+        return participantNames[otherParticipantIndex] || "Unknown Provider";
     };
 
-    // Format time
     const formatTime = (timestamp: any) => {
         if (!timestamp) return "";
         try {
@@ -212,12 +209,15 @@ export default function MessageScreen() {
     };
 
     const renderConversationItem = ({ item }: { item: Conversation }) => {
-        const providerName = getProviderName(item.participants);
+        const providerName = getProviderName(item.participants, item.participantNames);
 
         return (
             <TouchableOpacity
                 style={styles.messageItem}
-                onPress={() => router.push(`/chat?conversationId=${item.id}&providerName=${encodeURIComponent(providerName)}`)}
+                onPress={() => {
+                    const providerId = item.participants.find(id => id !== currentUser?.uid);
+                    router.push(`/chat?conversationId=${item.id}&providerName=${encodeURIComponent(providerName)}&providerId=${providerId}`);
+                }}
             >
                 <View style={styles.avatarContainer}>
                     <View style={styles.avatar}>
@@ -239,7 +239,7 @@ export default function MessageScreen() {
     const renderProviderItem = ({ item }: { item: Provider }) => (
         <TouchableOpacity
             style={styles.contactItem}
-            onPress={() => handleContactPress(item.id, item.name)}
+            onPress={() => startConversation(item.id, item.name)}
         >
             <View style={styles.avatar}>
                 <Text style={styles.avatarText}>
@@ -271,7 +271,6 @@ export default function MessageScreen() {
 
     return (
         <SafeAreaView style={styles.container}>
-            {/* Header */}
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
                     <Text style={styles.backButtonText}>←</Text>
@@ -280,12 +279,10 @@ export default function MessageScreen() {
                 <View style={styles.placeholder} />
             </View>
 
-            {/* Current Time */}
             <Text style={styles.currentTime}>
                 {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </Text>
 
-            {/* Search Bar */}
             <View style={styles.searchContainer}>
                 <TextInput
                     style={styles.searchInput}
@@ -297,7 +294,6 @@ export default function MessageScreen() {
                 />
             </View>
 
-            {/* Conversations List */}
             <FlatList
                 data={filteredConversations}
                 renderItem={renderConversationItem}
@@ -316,7 +312,6 @@ export default function MessageScreen() {
                 }
             />
 
-            {/* Write Message Button */}
             <TouchableOpacity
                 style={styles.writeButton}
                 onPress={() => {
@@ -327,7 +322,6 @@ export default function MessageScreen() {
                 <Text style={styles.writeButtonText}>Write a message</Text>
             </TouchableOpacity>
 
-            {/* Bottom Navigation Bar */}
             <View style={styles.bottomNav}>
                 <TouchableOpacity onPress={() => router.push("/home")}>
                     <Ionicons name="home-outline" size={24} color="#8e44ad" />
@@ -346,7 +340,6 @@ export default function MessageScreen() {
                 </TouchableOpacity>
             </View>
 
-            {/* Providers Modal */}
             <Modal
                 animationType="slide"
                 transparent={true}
