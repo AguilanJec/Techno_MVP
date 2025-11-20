@@ -9,7 +9,7 @@ export default function TermsConditions() {
     return (
         <View style={styles.container}>
             {/* Back Button */}
-            <TouchableOpacity onPress={() => router.push("/role")} style={styles.backButton}>
+            <TouchableOpacity onPress={() => router.push("/register")} style={styles.backButton}>
                 <Text style={styles.backText}>{"< Back"}</Text>
             </TouchableOpacity>
 
@@ -80,10 +80,10 @@ export default function TermsConditions() {
                 <TouchableOpacity
                     style={[styles.button, styles.accept]}
                     onPress={() => {
-                        // Navigate to Location page with parameters
+                        // Navigate to Role Selection page with parameters
                         router.replace({
-                            pathname: "/location",
-                            params: { email, password, confirmPassword, role } // Make sure these are passed
+                            pathname: "/role",
+                            params: { email, password, confirmPassword } // Pass the params
                         });
                     }}
                 >

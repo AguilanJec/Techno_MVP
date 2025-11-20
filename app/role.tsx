@@ -3,14 +3,43 @@ import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 
 export default function RoleSelection() {
+    // Get parameters passed from terms_conditions
     const { email, password, confirmPassword } = useLocalSearchParams();
     const [selectedRole, setSelectedRole] = useState("");
+
+    const handleNext = () => {
+        if (!selectedRole) return;
+
+        if (selectedRole === "parent") {
+            // Navigate to the parent/guardian flow (Location)
+            router.push({
+                pathname: "/location",
+                params: {
+                    email,
+                    password,
+                    confirmPassword,
+                    role: selectedRole
+                }
+            });
+        } else if (selectedRole === "babysitting" || selectedRole === "tutoring") {
+            // Navigate to the service provider flow (Location) - SAME AS PARENT
+            router.push({
+                pathname: "/location",
+                params: {
+                    email,
+                    password,
+                    confirmPassword,
+                    role: selectedRole
+                }
+            });
+        }
+    };
 
     return (
         <View style={styles.container}>
 
-            {/* Back Button */}
-            <TouchableOpacity onPress={() => router.push("/register")} style={styles.backButton}>
+            {/* Back Button - Now goes back to terms_conditions */}
+            <TouchableOpacity onPress={() => router.push("/terms_conditions")} style={styles.backButton}>
                 <Text style={styles.backText}>{"< Back"}</Text>
             </TouchableOpacity>
 
@@ -28,7 +57,7 @@ export default function RoleSelection() {
                 <Text>- I want to find a babysitter who can look after my child.</Text>
             </TouchableOpacity>
 
-            {/* Babysitter option */}
+            {/* Babysitting option */}
             <TouchableOpacity
                 style={[
                     styles.optionBox,
@@ -40,6 +69,18 @@ export default function RoleSelection() {
                 <Text>- I want to help other people take care of their children.</Text>
             </TouchableOpacity>
 
+            {/* Tutoring option */}
+            <TouchableOpacity
+                style={[
+                    styles.optionBox,
+                    selectedRole === "tutoring" && styles.selected
+                ]}
+                onPress={() => setSelectedRole("tutoring")}
+            >
+                <Text style={styles.optionTitle}>Tutoring</Text>
+                <Text>- I want to help other people with their children's education.</Text>
+            </TouchableOpacity>
+
             {/* Next Button */}
             <TouchableOpacity
                 style={[
@@ -47,17 +88,7 @@ export default function RoleSelection() {
                     { opacity: selectedRole ? 1 : 0.4 }
                 ]}
                 disabled={!selectedRole}
-                onPress={() =>
-                    router.push({
-                        pathname: "/terms_conditions",
-                        params: {
-                            email,
-                            password,
-                            confirmPassword,
-                            role: selectedRole
-                        }
-                    })
-                }
+                onPress={handleNext}
             >
                 <Text style={styles.nextText}>Next</Text>
             </TouchableOpacity>

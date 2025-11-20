@@ -42,7 +42,10 @@ export default function AccountScreen() {
                         <Text style={styles.itemText}>My messages</Text>
                         <Ionicons name="chevron-forward" size={18} color="#777" />
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.item} onPress={() => router.push("/edit_address")}>
+                    <TouchableOpacity style={styles.item} onPress={() => router.push({
+                        pathname: "/edit_address",
+                        params: { origin: "account" } // Pass the origin
+                    })}>
                         <Text style={styles.itemText}>My location</Text>
                         <Ionicons name="chevron-forward" size={18} color="#777" />
                     </TouchableOpacity>
