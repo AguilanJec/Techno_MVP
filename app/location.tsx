@@ -1,79 +1,171 @@
 // location.tsx
-import React, { useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image } from "react-native";
-import { WebView } from "react-native-webview";
+import React, { useEffect, useState } from "react";
+import {
+    View,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    StyleSheet,
+    Image,
+    ActivityIndicator,
+    Alert,
+    Platform,
+} from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
+import * as Location from "expo-location";
+import MapView, { Marker, MapPressEvent, MarkerDragEndEvent } from "react-native-maps";
 
 export default function LocationPage() {
     const router = useRouter();
-    // Get ALL parameters including email, password, etc.
     const { email, password, confirmPassword, role } = useLocalSearchParams();
 
-    const [locationText, setLocationText] = useState("Baguio");
-    const [region, setRegion] = useState({
-        latitude: 16.4023,
-        longitude: 120.5960,
-        latitudeDelta: 0.09,
-        longitudeDelta: 0.04,
-    });
+    const DEFAULT = { latitude: 16.4023, longitude: 120.5960 }; // Baguio default
+    const [coords, setCoords] = useState<{ latitude: number; longitude: number }>(DEFAULT);
+    const [locationText, setLocationText] = useState("Baguio, Philippines");
+    const [loading, setLoading] = useState(true);
+    const [searchLoading, setSearchLoading] = useState(false);
+
+    // Get device location and reverse geocode to address
+    useEffect(() => {
+        (async () => {
+            try {
+                const { status } = await Location.requestForegroundPermissionsAsync();
+                if (status !== "granted") {
+                    Alert.alert("Permission denied", "Location permission is required.");
+                    setLoading(false);
+                    return;
+                }
+                const location = await Location.getCurrentPositionAsync({});
+                const { latitude, longitude } = location.coords;
+                setCoords({ latitude, longitude });
+                await reverseGeocode(latitude, longitude);
+            } catch (err) {
+                console.warn("Location error:", err);
+            } finally {
+                setLoading(false);
+            }
+        })();
+    }, []);
+
+    // Reverse geocode coordinates → human-readable address
+    const reverseGeocode = async (lat: number, lng: number) => {
+        try {
+            const [place] = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng });
+            if (place) {
+                const address = `${place.name || ""}${place.street ? ", " + place.street : ""}${
+                    place.city ? ", " + place.city : ""
+                }${place.region ? ", " + place.region : ""}${place.country ? ", " + place.country : ""}`;
+                setLocationText(address);
+            } else {
+                setLocationText(`${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+            }
+        } catch (err) {
+            console.warn("Reverse geocode failed:", err);
+            setLocationText(`${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+        }
+    };
+
+    // Forward geocode address → coordinates
+    const geocodeAddress = async (address: string) => {
+        setSearchLoading(true);
+        try {
+            const [location] = await Location.geocodeAsync(address);
+            if (location) {
+                const { latitude, longitude } = location;
+                setCoords({ latitude, longitude });
+                await reverseGeocode(latitude, longitude);
+            } else {
+                Alert.alert("Location not found");
+            }
+        } catch (err) {
+            console.warn("Geocode failed:", err);
+            Alert.alert("Failed to find location");
+        }
+        setSearchLoading(false);
+    };
+
+    const onMapPress = async (evt: MapPressEvent) => {
+        const { latitude, longitude } = evt.nativeEvent.coordinate;
+        setCoords({ latitude, longitude });
+        await reverseGeocode(latitude, longitude);
+    };
+
+    const onMarkerDragEnd = async (evt: MarkerDragEndEvent) => {
+        const { latitude, longitude } = evt.nativeEvent.coordinate;
+        setCoords({ latitude, longitude });
+        await reverseGeocode(latitude, longitude);
+    };
+
+    const goNext = () => {
+        router.push({
+            pathname: "/edit_address",
+            params: {
+                latitude: coords.latitude.toString(),
+                longitude: coords.longitude.toString(),
+                address: locationText,
+                email,
+                password,
+                confirmPassword,
+                role,
+            },
+        });
+    };
+
+    if (loading) {
+        return (
+            <View style={styles.centered}>
+                <ActivityIndicator size="large" />
+                <Text style={{ marginTop: 10 }}>Loading map...</Text>
+            </View>
+        );
+    }
 
     return (
         <View style={styles.container}>
-            {/* Back button */}
             <TouchableOpacity
-                onPress={() => router.push({
-                    pathname: "/terms_conditions",
-                    params: { email, password, confirmPassword, role } // Pass params back too
-                })}
+                onPress={() => router.push({ pathname: "/terms_conditions", params: { email, password, confirmPassword, role } })}
                 style={styles.backButton}
             >
                 <Text style={styles.backText}>{"< Back"}</Text>
             </TouchableOpacity>
 
-            {/* Illustration */}
-            <Image
-                source={require("../assets/images/location_guy.png")} // Replace w/ your PNG
-                style={styles.headerImage}
-            />
+            <Image source={require("../assets/images/location_guy.png")} style={styles.headerImage} />
+            <Text style={styles.title}>Pinpoint your location</Text>
 
-            {/* Title */}
-            <Text style={styles.title}>What is your location?</Text>
-
-            {/* Search Box */}
             <View style={styles.searchContainer}>
-                <Image source={require("../assets/images/ph_flag.png")} style={styles.flag} />
                 <TextInput
                     value={locationText}
                     onChangeText={setLocationText}
                     placeholder="Search Location"
                     style={styles.input}
                 />
+                <TouchableOpacity onPress={() => geocodeAddress(locationText)} style={styles.searchButton}>
+                    <Text style={styles.searchText}>{searchLoading ? "Searching..." : "Search"}</Text>
+                </TouchableOpacity>
             </View>
 
-            {/* Map */}
             <View style={styles.mapContainer}>
-                <iframe
-                    src={`https://www.google.com/maps?q=${encodeURIComponent(locationText)}&output=embed`}
-                    style={{ width: '100%', height: '100%', border: 0 }}
-                />
+                <MapView
+                    style={styles.map}
+                    initialRegion={{
+                        latitude: coords.latitude,
+                        longitude: coords.longitude,
+                        latitudeDelta: 0.05,
+                        longitudeDelta: 0.05,
+                    }}
+                    region={{
+                        latitude: coords.latitude,
+                        longitude: coords.longitude,
+                        latitudeDelta: 0.05,
+                        longitudeDelta: 0.05,
+                    }}
+                    onPress={onMapPress}
+                >
+                    <Marker coordinate={coords} draggable onDragEnd={onMarkerDragEnd} />
+                </MapView>
             </View>
 
-            {/* Next Button */}
-            <TouchableOpacity
-                style={styles.nextButton}
-                onPress={() =>
-                    router.push({
-                        pathname: "/edit_address",
-                        params: {
-                            userLocation: locationText,
-                            email,
-                            password,
-                            confirmPassword,
-                            role
-                        },
-                    })
-                }
-            >
+            <TouchableOpacity style={styles.nextButton} onPress={goNext}>
                 <Text style={styles.nextText}>Next</Text>
             </TouchableOpacity>
         </View>
@@ -81,73 +173,27 @@ export default function LocationPage() {
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: "#F6EEFF",
-        paddingTop: 40,
-        alignItems: "center",
-    },
-    backButton: {
-        alignSelf: "flex-start",
-        marginLeft: 20,
-        marginBottom: 10,
-    },
-    backText: {
-        fontSize: 16,
-        color: "#333",
-    },
-    headerImage: {
-        width: 160,
-        height: 160,
-        resizeMode: "contain",
-    },
-    title: {
-        fontSize: 24,
-        fontWeight: "700",
-        marginTop: 10,
-        color: "#6A0DAD",
-    },
+    centered: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#F6EEFF" },
+    container: { flex: 1, backgroundColor: "#F6EEFF", paddingTop: 40, alignItems: "center" },
+    backButton: { alignSelf: "flex-start", marginLeft: 20, marginBottom: 10 },
+    backText: { fontSize: 16, color: "#333" },
+    headerImage: { width: 140, height: 140, resizeMode: "contain" },
+    title: { fontSize: 22, fontWeight: "700", marginTop: 10, color: "#6A0DAD" },
     searchContainer: {
         flexDirection: "row",
         backgroundColor: "#fff",
         width: "85%",
         borderRadius: 15,
-        marginTop: 15,
+        marginTop: 12,
         paddingHorizontal: 12,
         alignItems: "center",
         elevation: 3,
     },
-    flag: {
-        width: 26,
-        height: 26,
-        marginRight: 5,
-    },
-    input: {
-        flex: 1,
-        height: 45,
-        fontSize: 16,
-    },
-    mapContainer: {
-        width: "90%",
-        height: 300,
-        borderRadius: 20,
-        marginTop: 20,
-        overflow: "hidden", // ensures WebView respects rounded corners
-        elevation: 3,
-    },
-    map: {
-        flex: 1, // fill the container
-    },
-    nextButton: {
-        marginTop: 25,
-        backgroundColor: "#B388FF",
-        paddingVertical: 12,
-        paddingHorizontal: 40,
-        borderRadius: 25,
-    },
-    nextText: {
-        color: "#fff",
-        fontSize: 18,
-        fontWeight: "700",
-    },
+    input: { flex: 1, height: 45, fontSize: 16 },
+    searchButton: { marginLeft: 8, backgroundColor: "#BFA2E0", paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10 },
+    searchText: { color: "#fff", fontSize: 14, fontWeight: "600" },
+    mapContainer: { width: "92%", height: 360, borderRadius: 12, marginTop: 14, overflow: "hidden", elevation: 3 },
+    map: { flex: 1 },
+    nextButton: { marginTop: 18, backgroundColor: "#B388FF", paddingVertical: 12, paddingHorizontal: 40, borderRadius: 25 },
+    nextText: { color: "#fff", fontSize: 18, fontWeight: "700" },
 });

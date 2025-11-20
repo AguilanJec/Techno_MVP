@@ -89,9 +89,9 @@ export default function RegisterScreen() {
             router.push({
                 pathname: "/role",
                 params: {
-                    email,
-                    password,
-                    confirmPassword,
+                    email: String(email),
+                    password: String(password),
+                    confirmPassword: String(confirmPassword),
                 },
             });
         }
