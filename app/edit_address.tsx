@@ -1,3 +1,4 @@
+// edit_address.tsx
 import React, { useState } from "react";
 import { Alert } from "react-native";
 import { createUserWithEmailAndPassword, fetchSignInMethodsForEmail } from "firebase/auth";
@@ -18,8 +19,8 @@ export default function EditAddress() {
     const router = useRouter();
     const params = useLocalSearchParams();
 
-    // Extract parameters once to avoid re-declaration
-    const { email, password, userLocation: locationParam } = params;
+    // Extract parameters including the origin and role
+    const { email, password, userLocation: locationParam, origin, role } = params; // Add 'role' here
 
     // FIX: convert string | string[] to string
     const locationValue = Array.isArray(locationParam)
@@ -45,6 +46,11 @@ export default function EditAddress() {
                 return;
             }
 
+            if (passwordString.length < 6) {
+                Alert.alert("Password Too Weak", "Password must be at least 6 characters long.");
+                return;
+            }
+
             // Check if email already exists
             const existingMethods = await fetchSignInMethodsForEmail(auth, emailString);
             console.log("Existing methods:", existingMethods); // Debug log
@@ -61,13 +67,14 @@ export default function EditAddress() {
 
             console.log("User created:", user.uid); // Debug log
 
-            // Save user details in Firestore
+            // Save user details in Firestore - NOW INCLUDING THE ROLE
             console.log("Saving to Firestore..."); // Debug log
             await setDoc(doc(db, "users", user.uid), {
                 name,
                 phone,
                 address: locationValue,
                 addressDetails,
+                role, // <-- ADD THIS LINE to save the role
                 createdAt: new Date(),
             });
 
@@ -82,14 +89,36 @@ export default function EditAddress() {
             console.error("Registration error:", error);
             console.error("Error code:", error.code); // Debug log
             console.error("Error message:", error.message); // Debug log
-            Alert.alert("Error", error.message || "An error occurred during registration");
+            if (error.code === 'auth/weak-password') {
+                Alert.alert("Password Too Weak", "Password must be at least 6 characters long.");
+            } else if (error.code === 'auth/email-already-in-use') {
+                Alert.alert("Email Exists", "An account with this email already exists.");
+            } else if (error.code === 'auth/invalid-email') {
+                Alert.alert("Invalid Email", "Please enter a valid email address.");
+            } else {
+                Alert.alert("Error", error.message || "An error occurred during registration");
+            }
         }
     };
 
+    // Determine the back navigation based on origin
+    const handleBackPress = () => {
+        if (origin === "home") {
+            router.push("/home");
+        } else if (origin === "account") {
+            router.push("/account");
+        } else {
+            // Default behavior for registration flow
+            router.push("/location");
+        }
+    };
+
+    console.log("All parameters received in edit_address:", params); // Debug log
+
     return (
-        <ScrollView style={{ flex: 1, backgroundColor: "#EDE0FF" }}>
-            {/* Back button */}
-            <TouchableOpacity onPress={() => router.push("/location")} style={styles.backButton}>
+        <ScrollView style={styles.container}>
+            {/* Back button - uses the handleBackPress function */}
+            <TouchableOpacity onPress={handleBackPress} style={styles.backButton}>
                 <Text style={styles.backText}>{"< Back"}</Text>
             </TouchableOpacity>
 
@@ -158,74 +187,116 @@ export default function EditAddress() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: "#EDE0FF",
-        paddingTop: 60,
+        backgroundColor: "#F6EEFF", // Match LocationPage background
+        paddingTop: 60, // Match other screens
         paddingHorizontal: 20,
     },
-    backButton: { marginTop: 45, marginLeft: 20 },
+    backButton: {
+        marginTop: 10, // Reduced margin
+        marginLeft: 20,
+    },
     backText: {
-        color: "#6A4BBC",
-        fontSize: 16, },
+        fontSize: 16,
+        color: "#333", // Match other back buttons
+    },
     title: {
         textAlign: "center",
         marginTop: 10,
         fontSize: 24,
         fontWeight: "bold",
-        color: "#6A0DAD",
+        color: "#6A0DAD", // Match LocationPage title color
     },
-    label: { marginHorizontal: 20, marginTop: 15, fontWeight: "600", fontSize: 16 },
-    input: {
-        backgroundColor: "#F5F5F5",
+    label: {
         marginHorizontal: 20,
-        borderRadius: 10,
+        marginTop: 15,
+        fontWeight: "600",
+        fontSize: 16,
+        color: "#333", // Match other labels
+    },
+    input: {
+        backgroundColor: "#fff", // White background for inputs
+        marginHorizontal: 20,
+        borderRadius: 10, // Match RegisterScreen inputs
         padding: 12,
         fontSize: 16,
-        marginTop: 5
+        marginTop: 5,
+        elevation: 2, // Add subtle shadow
     },
     phoneContainer: {
-        backgroundColor: "#F5F5F5",
+        backgroundColor: "#fff", // White background
         marginHorizontal: 20,
-        borderRadius: 10,
+        borderRadius: 10, // Match RegisterScreen inputs
         paddingHorizontal: 15,
         flexDirection: "row",
         alignItems: "center",
         marginTop: 5,
-        height: 45
+        height: 45,
+        elevation: 2, // Add subtle shadow
     },
-    phonePrefix: { marginRight: 10, fontSize: 16, fontWeight: "600" },
-    phoneInput: { flex: 1, fontSize: 16 },
+    phonePrefix: {
+        marginRight: 10,
+        fontSize: 16,
+        fontWeight: "600",
+        color: "#333", // Match other text
+    },
+    phoneInput: {
+        flex: 1,
+        fontSize: 16,
+        color: "#333", // Match other text
+    },
     addressPicker: {
-        backgroundColor: "#F5F5F5",
+        backgroundColor: "#fff", // White background
         marginHorizontal: 20,
-        borderRadius: 10,
+        borderRadius: 10, // Match RegisterScreen inputs
         padding: 12,
-        marginTop: 5
+        marginTop: 5,
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
+        elevation: 2, // Add subtle shadow
     },
-    addressText: { fontSize: 17, fontWeight: "600" },
-    small: { fontSize: 13, color: "#555" },
-    confirmText: { marginTop: 18, marginLeft: 20, fontWeight: "600" },
+    addressText: {
+        fontSize: 17,
+        fontWeight: "600",
+        flex: 1, // Allow text to take available space
+        color: "#333", // Match other text
+    },
+    small: {
+        fontSize: 13,
+        color: "#555", // Subtle color for secondary text
+    },
+    confirmText: {
+        marginTop: 18,
+        marginLeft: 20,
+        fontWeight: "600",
+        color: "#333", // Match other text
+    },
     mapContainer: {
         width: "90%",
         alignSelf: "center",
         height: 200,
-        borderRadius: 15,
+        borderRadius: 15, // Match RegisterScreen inputs
         overflow: "hidden",
         marginTop: 10,
-        backgroundColor: "#ddd"
+        backgroundColor: "#ddd", // Placeholder color
     },
     privacy: {
         marginTop: 15,
         textAlign: "center",
         fontSize: 12,
-        color: "#555",
-        paddingHorizontal: 20
+        color: "#555", // Subtle color for secondary text
+        paddingHorizontal: 20,
     },
     saveButton: {
-        backgroundColor: "#C39BFF",
+        backgroundColor: "#B388FF", // Match LocationPage button color
         margin: 20,
         paddingVertical: 12,
-        borderRadius: 25,
-        alignItems: "center"
+        borderRadius: 25, // Match LocationPage button style
+        alignItems: "center",
     },
-    saveText: { fontSize: 18, fontWeight: "700", color: "#fff" }
+    saveText: {
+        fontSize: 18,
+        fontWeight: "700",
+        color: "#fff", // White text for contrast
+    },
 });
