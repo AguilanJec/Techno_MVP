@@ -50,7 +50,7 @@ export default function ChatbotScreen() {
     const [sound, setSound] = useState<Audio.Sound | null>(null);
     const [recordingDuration, setRecordingDuration] = useState(0);
 
-    const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
+    const recordingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const flatListRef = useRef<FlatList<any> | null>(null);
 
     useEffect(() => {
@@ -62,9 +62,11 @@ export default function ChatbotScreen() {
     }, [sound]);
 
     useEffect(() => {
-        setTimeout(() => {
+        const timer = setTimeout(() => {
             flatListRef.current?.scrollToEnd({ animated: true });
         }, 100);
+
+        return () => clearTimeout(timer);
     }, [messages]);
 
     const timestamp = () =>
@@ -162,7 +164,7 @@ export default function ChatbotScreen() {
         setNewMessage("");
 
         // Simulate AI typing + response
-        setTimeout(() => {
+        const timer = setTimeout(() => {
             const aiResponse = getAIResponse(newMessage);
             const reply: Message = {
                 id: Date.now().toString() + "-bot",
@@ -173,6 +175,9 @@ export default function ChatbotScreen() {
             };
             setMessages((prev) => [...prev, reply]);
         }, 800);
+
+        // Optional: Clean up if component unmounts
+        return () => clearTimeout(timer);
     };
 
     // ──────────────────────────────────────────────
