@@ -71,20 +71,6 @@ const ProfileScreen: React.FC = () => {
 
                     <View style={styles.linkRow}>
                         <Image
-                            source={require("../assets/Facebook_Logo.png")}
-                            style={styles.icon}
-                        />
-                        <Text style={styles.linkLabel}>Facebook</Text>
-                        <Switch
-                            trackColor={{ false: "#ccc", true: "#b58dde" }}
-                            thumbColor="#fff"
-                            value={facebookLinked}
-                            onValueChange={setFacebookLinked}
-                        />
-                    </View>
-
-                    <View style={styles.linkRow}>
-                        <Image
                             source={require("../assets/Google_Logo.png")}
                             style={styles.icon}
                         />
@@ -101,7 +87,7 @@ const ProfileScreen: React.FC = () => {
                 {/* LOGOUT BUTTON */}
                 <TouchableOpacity
                     style={styles.logoutButton}
-                    onPress={() => router.push("/")}
+                    onPress={() => router.push("/login")}
                 >
                     <Text style={styles.logoutText}>Logout</Text>
                 </TouchableOpacity>
