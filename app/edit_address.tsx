@@ -87,7 +87,7 @@ export default function EditAddress() {
     };
 
     return (
-        <ScrollView style={{ flex: 1, backgroundColor: "#fff" }}>
+        <ScrollView style={{ flex: 1, backgroundColor: "#EDE0FF" }}>
             {/* Back button */}
             <TouchableOpacity onPress={() => router.push("/location")} style={styles.backButton}>
                 <Text style={styles.backText}>{"< Back"}</Text>
@@ -156,13 +156,22 @@ export default function EditAddress() {
 }
 
 const styles = StyleSheet.create({
+    container: {
+        flex: 1,
+        backgroundColor: "#EDE0FF",
+        paddingTop: 60,
+        paddingHorizontal: 20,
+    },
     backButton: { marginTop: 45, marginLeft: 20 },
-    backText: { fontSize: 16 },
+    backText: {
+        color: "#6A4BBC",
+        fontSize: 16, },
     title: {
         textAlign: "center",
         marginTop: 10,
         fontSize: 24,
-        fontWeight: "bold"
+        fontWeight: "bold",
+        color: "#6A0DAD",
     },
     label: { marginHorizontal: 20, marginTop: 15, fontWeight: "600", fontSize: 16 },
     input: {
