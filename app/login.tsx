@@ -163,7 +163,6 @@ export default function LoginScreen() {
                 <Text style={styles.orText}>or sign in with</Text>
 
                 <View style={styles.socialRow}>
-                    {/* Make sure promptAsync is used here */}
                     <TouchableOpacity style={styles.socialButton} onPress={() => promptAsync()}>
                         <Image
                             source={require("../assets/Google_Logo.png")}

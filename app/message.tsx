@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
     View,
     Text,
@@ -8,94 +8,266 @@ import {
     SafeAreaView,
     FlatList,
     Modal,
+    ActivityIndicator
 } from "react-native";
 import { useRouter } from "expo-router";
-import { Ionicons } from "@expo/vector-icons"; // ✅ added for bottom nav icons
+import { Ionicons } from "@expo/vector-icons";
+import { collection, query, where, getDocs, onSnapshot, orderBy } from "firebase/firestore";
+import { db } from "../firebaseConfig"; // Adjust path as needed
+import { getAuth } from "firebase/auth";
 
-// Mock data for messages
-const INITIAL_MESSAGES = [
-    { id: "1", name: "Steve Rogers", lastMessage: "Hello is Tom 10AM okay for us", time: "9:40 AM", unread: false },
-    { id: "2", name: "Natasha Romanof", lastMessage: "Your: What's man!", time: "9:40 AM", unread: true },
-    { id: "3", name: "Peter Parker", lastMessage: "Your: What's man!", time: "9:40 AM", unread: false },
-];
+// Types based on your Firebase structure
+interface Provider {
+    id: string;
+    name: string;
+    bio?: string;
+    distance?: string;
+    rate?: string;
+    rating?: number;
+    type?: string;
+    skills?: string[];
+}
 
-const ALL_CONTACTS = [
-    { id: "1", name: "Steve Rogers" },
-    { id: "2", name: "Natasha Romanof" },
-    { id: "3", name: "Peter Parker" },
-    { id: "4", name: "Tony Stark" },
-    { id: "5", name: "Bruce Banner" },
-    { id: "6", name: "Thor Odinson" },
-    { id: "7", name: "Clint Barton" },
-    { id: "8", name: "Wanda Maximoff" },
-    { id: "9", name: "Sam Wilson" },
-];
+interface Conversation {
+    id: string;
+    participants: string[];
+    lastMessage: string;
+    lastMessageTime: any;
+    unread: boolean;
+    lastMessageSender: string;
+}
 
 export default function MessageScreen() {
     const router = useRouter();
     const [searchQuery, setSearchQuery] = useState("");
     const [modalVisible, setModalVisible] = useState(false);
-    const [messages, setMessages] = useState(INITIAL_MESSAGES);
+    const [conversations, setConversations] = useState<Conversation[]>([]);
+    const [providers, setProviders] = useState<Provider[]>([]);
+    const [currentUser, setCurrentUser] = useState<any>(null);
+    const [loading, setLoading] = useState(true);
+    const [contactsLoading, setContactsLoading] = useState(false);
 
-    const filteredMessages = messages.filter(message =>
-        message.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        message.lastMessage.toLowerCase().includes(searchQuery.toLowerCase())
+    // Get current user
+    useEffect(() => {
+        const auth = getAuth();
+        const user = auth.currentUser;
+
+        if (user) {
+            setCurrentUser(user);
+            fetchProviders();
+            setupConversationsListener(user.uid);
+        } else {
+            setLoading(false);
+        }
+    }, []);
+
+    // Fetch all providers/tutors from your "providers" collection
+    const fetchProviders = async () => {
+        try {
+            setContactsLoading(true);
+            const providersQuery = query(collection(db, "providers"));
+            const querySnapshot = await getDocs(providersQuery);
+            const providersData: Provider[] = [];
+
+            querySnapshot.forEach((doc) => {
+                const providerData = doc.data();
+                if (providerData.name) {
+                    providersData.push({
+                        id: doc.id,
+                        name: providerData.name,
+                        bio: providerData.bio,
+                        distance: providerData.distance,
+                        rate: providerData.rate,
+                        rating: providerData.rating,
+                        type: providerData.type,
+                        skills: providerData.skills
+                    } as Provider);
+                }
+            });
+
+            setProviders(providersData);
+            setContactsLoading(false);
+        } catch (error) {
+            console.error("Error fetching providers:", error);
+            setContactsLoading(false);
+        }
+    };
+
+    // Real-time listener for conversations
+    const setupConversationsListener = (currentUserId: string) => {
+        try {
+            const conversationsQuery = query(
+                collection(db, "conversations"),
+                where("participants", "array-contains", currentUserId),
+                orderBy("lastMessageTime", "desc")
+            );
+
+            const unsubscribe = onSnapshot(conversationsQuery,
+                (snapshot) => {
+                    const conversationsData: Conversation[] = [];
+
+                    snapshot.forEach((doc) => {
+                        const data = doc.data();
+                        conversationsData.push({
+                            id: doc.id,
+                            participants: data.participants || [],
+                            lastMessage: data.lastMessage || "No messages yet",
+                            lastMessageTime: data.lastMessageTime,
+                            unread: data.unread || false,
+                            lastMessageSender: data.lastMessageSender || ""
+                        } as Conversation);
+                    });
+
+                    setConversations(conversationsData);
+                    setLoading(false);
+                },
+                (error) => {
+                    console.error("Error in conversations listener:", error);
+                    setLoading(false);
+                }
+            );
+
+            return unsubscribe;
+        } catch (error) {
+            console.error("Error setting up conversations listener:", error);
+            setLoading(false);
+        }
+    };
+
+    // Handle contact press - navigate to chat
+    const handleContactPress = async (providerId: string, providerName: string) => {
+        if (!currentUser) return;
+
+        try {
+            // Check if conversation already exists with this provider
+            const conversationsQuery = query(
+                collection(db, "conversations"),
+                where("participants", "array-contains", currentUser.uid)
+            );
+
+            const querySnapshot = await getDocs(conversationsQuery);
+            let existingConversation: Conversation | null = null;
+
+            querySnapshot.forEach((doc) => {
+                const conversation = doc.data() as Conversation;
+                // Check if this conversation includes the provider
+                const providerConversation = conversation.participants.includes(providerId);
+                if (providerConversation) {
+                    // @ts-ignore
+                    existingConversation = { id: doc.id, ...conversation };
+                }
+            });
+
+            if (existingConversation) {
+                // Navigate to existing conversation
+                // @ts-ignore
+                router.push(`/chat?conversationId=${existingConversation.id}&providerName=${encodeURIComponent(providerName)}`);
+            } else {
+                // Navigate to new chat with provider info
+                router.push(`/chat?providerId=${providerId}&providerName=${encodeURIComponent(providerName)}`);
+            }
+
+            setModalVisible(false);
+            setSearchQuery("");
+        } catch (error) {
+            console.error("Error handling contact press:", error);
+        }
+    };
+
+    // Filter conversations based on provider names
+    const filteredConversations = conversations.filter(conversation => {
+        if (!searchQuery) return true;
+
+        const otherParticipantId = conversation.participants.find(id => id !== currentUser?.uid);
+        const provider = providers.find(p => p.id === otherParticipantId);
+        const providerName = provider?.name || "";
+
+        return providerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            conversation.lastMessage.toLowerCase().includes(searchQuery.toLowerCase());
+    });
+
+    // Filter providers for modal
+    const filteredProviders = providers.filter(provider =>
+        provider.name.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
-    const availableContacts = ALL_CONTACTS.filter(contact =>
-        !messages.some(msg => msg.name === contact.name)
-    );
+    // Get provider name by ID
+    const getProviderName = (participants: string[]) => {
+        if (!currentUser || !participants) return "Unknown Provider";
 
-    const filteredContacts = availableContacts.filter(contact =>
-        contact.name.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+        const otherParticipantId = participants.find(id => id !== currentUser.uid);
+        const provider = providers.find(p => p.id === otherParticipantId);
+        return provider?.name || "Unknown Provider";
+    };
 
-    const renderMessageItem = ({ item }: { item: any }) => (
-        <TouchableOpacity
-            style={styles.messageItem}
-            onPress={() => router.push(`/chat?user=${encodeURIComponent(item.name)}`)}
-        >
-            <View style={styles.avatarContainer}>
-                <View style={styles.avatar}>
-                    <Text style={styles.avatarText}>
-                        {item.name.split(" ").map((n: string) => n[0]).join("")}
-                    </Text>
+    // Format time
+    const formatTime = (timestamp: any) => {
+        if (!timestamp) return "";
+        try {
+            const date = timestamp.toDate();
+            return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        } catch (error) {
+            return "";
+        }
+    };
+
+    const renderConversationItem = ({ item }: { item: Conversation }) => {
+        const providerName = getProviderName(item.participants);
+
+        return (
+            <TouchableOpacity
+                style={styles.messageItem}
+                onPress={() => router.push(`/chat?conversationId=${item.id}&providerName=${encodeURIComponent(providerName)}`)}
+            >
+                <View style={styles.avatarContainer}>
+                    <View style={styles.avatar}>
+                        <Text style={styles.avatarText}>
+                            {providerName.split(" ").map((n: string) => n[0]).join("")}
+                        </Text>
+                    </View>
+                    {item.unread && <View style={styles.unreadDot} />}
                 </View>
-                {item.unread && <View style={styles.unreadDot} />}
-            </View>
-            <View style={styles.messageContent}>
-                <Text style={styles.name}>{item.name}</Text>
-                <Text style={styles.messageText}>{item.lastMessage}</Text>
-            </View>
-            <Text style={styles.time}>{item.time}</Text>
-        </TouchableOpacity>
-    );
+                <View style={styles.messageContent}>
+                    <Text style={styles.name}>{providerName}</Text>
+                    <Text style={styles.messageText}>{item.lastMessage}</Text>
+                </View>
+                <Text style={styles.time}>{formatTime(item.lastMessageTime)}</Text>
+            </TouchableOpacity>
+        );
+    };
 
-    const renderContactItem = ({ item }: { item: any }) => (
+    const renderProviderItem = ({ item }: { item: Provider }) => (
         <TouchableOpacity
             style={styles.contactItem}
-            onPress={() => {
-                const newMessage = {
-                    id: Date.now().toString(),
-                    name: item.name,
-                    lastMessage: "New conversation",
-                    time: "Now",
-                    unread: true,
-                };
-                setMessages(prev => [newMessage, ...prev]);
-                setModalVisible(false);
-                setSearchQuery("");
-                router.push(`/chat?user=${encodeURIComponent(item.name)}`);
-            }}
+            onPress={() => handleContactPress(item.id, item.name)}
         >
             <View style={styles.avatar}>
                 <Text style={styles.avatarText}>
                     {item.name.split(" ").map((n: string) => n[0]).join("")}
                 </Text>
             </View>
-            <Text style={styles.contactName}>{item.name}</Text>
+            <View style={styles.contactInfo}>
+                <Text style={styles.contactName}>{item.name}</Text>
+                <Text style={styles.userType}>{item.type || "Tutor"}</Text>
+                {item.skills && item.skills.length > 0 && (
+                    <Text style={styles.skills} numberOfLines={1}>
+                        {item.skills.slice(0, 2).join(", ")}
+                    </Text>
+                )}
+            </View>
         </TouchableOpacity>
     );
+
+    if (loading) {
+        return (
+            <SafeAreaView style={styles.container}>
+                <View style={styles.loadingContainer}>
+                    <ActivityIndicator size="large" color="#8e44ad" />
+                    <Text style={styles.loadingText}>Loading messages...</Text>
+                </View>
+            </SafeAreaView>
+        );
+    }
 
     return (
         <SafeAreaView style={styles.container}>
@@ -109,7 +281,9 @@ export default function MessageScreen() {
             </View>
 
             {/* Current Time */}
-            <Text style={styles.currentTime}>12:00</Text>
+            <Text style={styles.currentTime}>
+                {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </Text>
 
             {/* Search Bar */}
             <View style={styles.searchContainer}>
@@ -123,17 +297,20 @@ export default function MessageScreen() {
                 />
             </View>
 
-            {/* Messages List */}
+            {/* Conversations List */}
             <FlatList
-                data={filteredMessages}
-                renderItem={renderMessageItem}
+                data={filteredConversations}
+                renderItem={renderConversationItem}
                 keyExtractor={(item) => item.id}
                 style={styles.messagesList}
                 showsVerticalScrollIndicator={false}
                 ListEmptyComponent={
                     <View style={styles.emptyState}>
                         <Text style={styles.emptyStateText}>
-                            {searchQuery ? "No messages found" : "No messages yet"}
+                            {searchQuery ? "No conversations found" : "No conversations yet"}
+                        </Text>
+                        <Text style={styles.emptyStateSubText}>
+                            Start a new conversation by tapping &#34;Write a message&#34;
                         </Text>
                     </View>
                 }
@@ -150,7 +327,7 @@ export default function MessageScreen() {
                 <Text style={styles.writeButtonText}>Write a message</Text>
             </TouchableOpacity>
 
-            {/* ✅ BOTTOM NAVIGATION BAR */}
+            {/* Bottom Navigation Bar */}
             <View style={styles.bottomNav}>
                 <TouchableOpacity onPress={() => router.push("/home")}>
                     <Ionicons name="home-outline" size={24} color="#8e44ad" />
@@ -169,7 +346,7 @@ export default function MessageScreen() {
                 </TouchableOpacity>
             </View>
 
-            {/* Contact Modal */}
+            {/* Providers Modal */}
             <Modal
                 animationType="slide"
                 transparent={true}
@@ -187,26 +364,33 @@ export default function MessageScreen() {
 
                         <TextInput
                             style={styles.modalSearchInput}
-                            placeholder="Search contacts..."
+                            placeholder="Search tutors..."
                             placeholderTextColor="#999"
                             value={searchQuery}
                             onChangeText={setSearchQuery}
                             autoFocus={true}
                         />
 
-                        <FlatList
-                            data={filteredContacts}
-                            renderItem={renderContactItem}
-                            keyExtractor={(item) => item.id}
-                            style={styles.contactsList}
-                            ListEmptyComponent={
-                                <View style={styles.emptyState}>
-                                    <Text style={styles.emptyStateText}>
-                                        {searchQuery ? "No contacts found" : "No contacts available"}
-                                    </Text>
-                                </View>
-                            }
-                        />
+                        {contactsLoading ? (
+                            <View style={styles.loadingContainer}>
+                                <ActivityIndicator size="small" color="#8e44ad" />
+                                <Text>Loading tutors...</Text>
+                            </View>
+                        ) : (
+                            <FlatList
+                                data={filteredProviders}
+                                renderItem={renderProviderItem}
+                                keyExtractor={(item) => item.id}
+                                style={styles.contactsList}
+                                ListEmptyComponent={
+                                    <View style={styles.emptyState}>
+                                        <Text style={styles.emptyStateText}>
+                                            {searchQuery ? "No tutors found" : "No tutors available"}
+                                        </Text>
+                                    </View>
+                                }
+                            />
+                        )}
                     </View>
                 </View>
             </Modal>
@@ -332,7 +516,13 @@ const styles = StyleSheet.create({
         borderBottomWidth: 1,
         borderBottomColor: "#f0f0f0",
     },
-    contactName: { fontSize: 16, color: "#333", marginLeft: 15 },
+    contactInfo: { marginLeft: 15, flex: 1 },
+    contactName: { fontSize: 16, color: "#333", fontWeight: "500" },
+    userType: { fontSize: 14, color: "#666", textTransform: "capitalize", marginTop: 2 },
+    skills: { fontSize: 12, color: "#999", marginTop: 2 },
     emptyState: { padding: 20, alignItems: "center" },
     emptyStateText: { color: "#666", fontSize: 16, textAlign: "center" },
+    emptyStateSubText: { color: "#999", fontSize: 14, textAlign: "center", marginTop: 8 },
+    loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
+    loadingText: { marginTop: 10, color: "#666" },
 });
