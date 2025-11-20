@@ -49,7 +49,7 @@ export default function Details() {
                 <TouchableOpacity onPress={() => router.push("/search")}>
                     <Ionicons name="arrow-back" size={24} color="#fff" />
                 </TouchableOpacity>
-                <Text style={styles.headerTitle}>Profile</Text>
+                <Text style={styles.headerTitle}>Service Details</Text>
                 <View style={{ width: 24 }} />
             </View>
 
