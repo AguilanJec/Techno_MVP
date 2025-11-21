@@ -7,12 +7,38 @@ import {
     TouchableOpacity,
     ScrollView,
     Image,
+    ActivityIndicator,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
-import { db } from "../firebaseConfig";
-import { doc, getDoc, collection, query, where, getDocs, addDoc } from "firebase/firestore";
+import { db } from "../../firebaseConfig";
+import {
+    doc,
+    getDoc,
+    collection,
+    query,
+    where,
+    getDocs,
+    addDoc,
+} from "firebase/firestore";
 import { getAuth } from "firebase/auth";
+
+type AvailabilityDay = {
+    enabled?: boolean;
+    from?: string;
+    to?: string;
+};
+
+type AvailabilityMap = {
+    Monday?: AvailabilityDay;
+    Tuesday?: AvailabilityDay;
+    Wednesday?: AvailabilityDay;
+    Thursday?: AvailabilityDay;
+    Friday?: AvailabilityDay;
+    Saturday?: AvailabilityDay;
+    Sunday?: AvailabilityDay;
+    [key: string]: AvailabilityDay | undefined;
+};
 
 interface ReviewRaw {
     comment?: string;
@@ -24,7 +50,7 @@ interface ReviewRaw {
 interface ReviewEnriched extends ReviewRaw {
     reviewerName?: string;
     formattedDate?: string;
-    reviewerPhoto?: string | null; // Allow null
+    reviewerPhoto?: string | null;
 }
 
 interface Tutor {
@@ -37,15 +63,14 @@ interface Tutor {
     bio?: string;
     skills?: string[];
     address?: string;
+    addressDetails?: string;
     phone?: string;
     latitude?: number;
     longitude?: number;
     role?: string;
     type?: string;
-    photoURL?: string;
-    profilePicture?: string;
-    image?: string;
-    avatar?: string;
+    picture?: string;
+    availability?: AvailabilityMap;
 }
 
 export default function Details() {
@@ -55,12 +80,50 @@ export default function Details() {
     const tutorId = Array.isArray(id) ? id[0] : id;
 
     const [tutor, setTutor] = useState<Tutor | null>(null);
-    const [enrichedReviews, setEnrichedReviews] = useState<ReviewEnriched[]>([]);
-    const [computedDistance, setComputedDistance] = useState<string | null>(null);
+    const [enrichedReviews, setEnrichedReviews] = useState<ReviewEnriched[]>(
+        []
+    );
+    const [computedDistance, setComputedDistance] = useState<string | null>(
+        null
+    );
     const [loading, setLoading] = useState(true);
     const [profilePhoto, setProfilePhoto] = useState<string | null>(null);
 
     const auth = getAuth();
+
+    // Helpers
+    function cleanBase64(url?: any): string | null {
+        if (!url || typeof url !== "string") return null;
+        let s = url.trim();
+        // Remove url(...) wrapper
+        if (s.startsWith("url(") && s.endsWith(")")) {
+            s = s.replace(/^url\(/, "").replace(/\)$/, "");
+        }
+        return s || null;
+    }
+
+    function formatTime24To12(time?: string) {
+        // expects "HH:mm"
+        if (!time || typeof time !== "string") return "";
+        const [hhStr, mmStr] = time.split(":");
+        const hh = parseInt(hhStr, 10);
+        if (Number.isNaN(hh)) return time;
+        const mm = mmStr ?? "00";
+        const suffix = hh >= 12 ? "PM" : "AM";
+        const hour12 = ((hh + 11) % 12) + 1;
+        return `${hour12}:${mm} ${suffix}`;
+    }
+
+    // ordered days for display
+    const DAYS = [
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+        "Sunday",
+    ];
 
     useEffect(() => {
         if (!tutorId) return;
@@ -77,38 +140,55 @@ export default function Details() {
                     return;
                 }
                 const data = snap.data() as any;
+
                 const t: Tutor = {
                     id: snap.id,
-                    ...(data as Omit<Tutor, "id">)
+                    name: data.name || "",
+                    distance: data.distance || undefined,
+                    rate: data.rate ? String(data.rate) : undefined,
+                    rating: typeof data.rating === "number" ? data.rating : undefined,
+                    reviews: data.reviews ?? undefined,
+                    bio: data.bio ?? undefined,
+                    skills: Array.isArray(data.skills) ? data.skills : undefined,
+                    address: data.address ?? undefined,
+                    addressDetails: data.addressDetails ?? undefined,
+                    phone: data.phone ?? undefined,
+                    latitude:
+                        typeof data.latitude === "number" ? data.latitude : undefined,
+                    longitude:
+                        typeof data.longitude === "number" ? data.longitude : undefined,
+                    role: data.role ?? data.type ?? undefined,
+                    picture: data.picture ?? undefined,
+                    availability: data.availability ?? undefined,
                 };
                 setTutor(t);
 
-                // Get profile photo from tutor data - check multiple possible field names
-                const photoUrl = data.photoURL || data.profilePicture || data.image || data.avatar || data.profileImage;
-                console.log("Profile photo URL:", photoUrl); // Debug log
-                if (photoUrl) {
-                    setProfilePhoto(photoUrl);
-                } else {
-                    console.log("No profile photo found for tutor:", tutorId);
-                    setProfilePhoto(null);
-                }
+                // Profile photo
+                const photoUrl = data.picture ?? data.photoURL ?? data.profilePicture;
+                const cleaned = cleanBase64(photoUrl);
+                setProfilePhoto(cleaned);
 
-                // 1) Enrich reviews: fetch reviewer name and photo for each review
+                // Enrich reviews: fetch reviewer name and photo for each review
                 if (Array.isArray(data.reviews) && data.reviews.length > 0) {
                     const reviewsRaw: ReviewRaw[] = data.reviews;
                     const enriched: ReviewEnriched[] = await Promise.all(
                         reviewsRaw.map(async (r) => {
                             const out: ReviewEnriched = { ...r };
-
-                            // get reviewer name and photo from users collection
                             try {
                                 if (r.reviewer) {
                                     const userSnap = await getDoc(doc(db, "users", r.reviewer));
                                     if (userSnap.exists()) {
                                         const u = userSnap.data() as any;
                                         out.reviewerName = u.name || "User";
-                                        // Check multiple possible photo field names
-                                        out.reviewerPhoto = u.photoURL || u.profilePicture || u.image || u.avatar || null;
+                                        // prefer `picture` field (clean base64 if present)
+                                        const rawPhoto =
+                                            u.picture ||
+                                            u.photoURL ||
+                                            u.profilePicture ||
+                                            u.image ||
+                                            u.avatar ||
+                                            null;
+                                        out.reviewerPhoto = cleanBase64(rawPhoto) ?? null;
                                     } else {
                                         out.reviewerName = "User";
                                         out.reviewerPhoto = null;
@@ -149,8 +229,18 @@ export default function Details() {
 
                     // sort newest first
                     enriched.sort((a, b) => {
-                        const aTime = a.date && typeof (a.date as any).toDate === "function" ? (a.date as any).toDate().getTime() : a.date ? new Date(a.date).getTime() : 0;
-                        const bTime = b.date && typeof (b.date as any).toDate === "function" ? (b.date as any).toDate().getTime() : b.date ? new Date(b.date).getTime() : 0;
+                        const aTime =
+                            a.date && typeof (a.date as any).toDate === "function"
+                                ? (a.date as any).toDate().getTime()
+                                : a.date
+                                    ? new Date(a.date).getTime()
+                                    : 0;
+                        const bTime =
+                            b.date && typeof (b.date as any).toDate === "function"
+                                ? (b.date as any).toDate().getTime()
+                                : b.date
+                                    ? new Date(b.date).getTime()
+                                    : 0;
                         return bTime - aTime;
                     });
 
@@ -159,9 +249,11 @@ export default function Details() {
                     setEnrichedReviews([]);
                 }
 
-                // 2) Compute distance
+                // Compute distance
                 if (distanceParam) {
-                    const dist = Array.isArray(distanceParam) ? distanceParam[0] : distanceParam;
+                    const dist = Array.isArray(distanceParam)
+                        ? distanceParam[0]
+                        : distanceParam;
                     setComputedDistance(dist as string);
                 } else {
                     try {
@@ -170,8 +262,18 @@ export default function Details() {
                             const userSnap = await getDoc(doc(db, "users", user.uid));
                             if (userSnap.exists()) {
                                 const u = userSnap.data() as any;
-                                if (typeof u.latitude === "number" && typeof u.longitude === "number" && typeof data.latitude === "number" && typeof data.longitude === "number") {
-                                    const km = getDistanceFromLatLonInKm(u.latitude, u.longitude, data.latitude, data.longitude);
+                                if (
+                                    typeof u.latitude === "number" &&
+                                    typeof u.longitude === "number" &&
+                                    typeof data.latitude === "number" &&
+                                    typeof data.longitude === "number"
+                                ) {
+                                    const km = getDistanceFromLatLonInKm(
+                                        u.latitude,
+                                        u.longitude,
+                                        data.latitude,
+                                        data.longitude
+                                    );
                                     setComputedDistance(`${km.toFixed(1)} km away`);
                                 } else {
                                     setComputedDistance("Distance unavailable");
@@ -216,7 +318,11 @@ export default function Details() {
             });
 
             if (existingConversation) {
-                router.push(`/chat?conversationId=${existingConversation.id}&providerName=${encodeURIComponent(tutor.name)}&providerId=${tutor.id}`);
+                router.push(
+                    `/chat?conversationId=${existingConversation.id}&providerName=${encodeURIComponent(
+                        tutor.name
+                    )}&providerId=${tutor.id}`
+                );
             } else {
                 const newConversation = {
                     participants: [currentUser.uid, tutor.id],
@@ -224,11 +330,18 @@ export default function Details() {
                     lastMessage: "Conversation started",
                     lastMessageTime: new Date(),
                     unread: false,
-                    lastMessageSender: currentUser.uid
+                    lastMessageSender: currentUser.uid,
                 };
 
-                const docRef = await addDoc(collection(db, "conversations"), newConversation);
-                router.push(`/chat?conversationId=${docRef.id}&providerName=${encodeURIComponent(tutor.name)}&providerId=${tutor.id}`);
+                const docRef = await addDoc(
+                    collection(db, "conversations"),
+                    newConversation
+                );
+                router.push(
+                    `/chat?conversationId=${docRef.id}&providerName=${encodeURIComponent(
+                        tutor.name
+                    )}&providerId=${tutor.id}`
+                );
             }
         } catch (error) {
             console.error("Error starting conversation:", error);
@@ -237,28 +350,114 @@ export default function Details() {
 
     // Function to get initials for avatar
     const getInitials = (name: string) => {
-        return name.split(' ').map(n => n[0]).join('').toUpperCase();
+        return name
+            .split(" ")
+            .map((n) => n[0])
+            .join("")
+            .toUpperCase();
     };
 
-    if (loading) return <Text style={styles.loading}>Loading tutor details...</Text>;
-    if (!tutor) return <Text style={styles.loading}>Provider not found.</Text>;
+    if (loading)
+        return (
+            <View style={[styles.container, styles.centered]}>
+                <ActivityIndicator size="large" color="#b58dde" />
+                <Text style={styles.loading}>Loading tutor details...</Text>
+            </View>
+        );
+    if (!tutor)
+        return (
+            <View style={[styles.container, styles.centered]}>
+                <Text style={styles.loading}>Provider not found.</Text>
+            </View>
+        );
 
     // Calculate review count & average rating
-    const reviewCount = enrichedReviews.length > 0 ? enrichedReviews.length : (typeof tutor.reviews === "number" ? tutor.reviews : 0);
+    const reviewCount =
+        enrichedReviews.length > 0
+            ? enrichedReviews.length
+            : typeof tutor.reviews === "number"
+                ? tutor.reviews
+                : 0;
 
     const avgRating =
         enrichedReviews.length > 0
             ? +(
-                enrichedReviews
-                    .map((r) => r.rating ?? 0)
-                    .reduce((a, b) => a + b, 0) / enrichedReviews.length
+                enrichedReviews.map((r) => r.rating ?? 0).reduce((a, b) => a + b, 0) /
+                enrichedReviews.length
             ).toFixed(1)
             : tutor.rating ?? 0;
+
+    // Render Preferred Schedule section
+    const renderSchedule = (availability?: AvailabilityMap) => {
+        if (!availability) {
+            return (
+                <View style={[styles.sectionCard]}>
+                    <Text style={styles.sectionTitle}>Preferred Schedule</Text>
+                    <Text style={styles.noSchedule}>No schedule set.</Text>
+                </View>
+            );
+        }
+
+        return (
+            <View style={styles.sectionCard}>
+                <View style={styles.scheduleHeaderRow}>
+                    <View style={{ flexDirection: "row", alignItems: "center" }}>
+                        <Ionicons name="calendar" size={20} color="#7B52AB" />
+                        <Text style={styles.sectionTitle}> Preferred Schedule</Text>
+                    </View>
+                    <Text style={styles.smallHint}>Local timezone</Text>
+                </View>
+
+                <View style={styles.scheduleGrid}>
+                    {DAYS.map((day) => {
+                        const d = availability[day] ?? {};
+                        const enabled = !!d.enabled;
+                        const from = d.from ?? "--:--";
+                        const to = d.to ?? "--:--";
+                        return (
+                            <View key={day} style={styles.dayRow}>
+                                <View style={styles.dayLeft}>
+                                    <Text style={styles.dayName}>{day.slice(0, 3)}</Text>
+                                    <Text style={styles.dayFullName}>{day}</Text>
+                                </View>
+
+                                <View style={styles.dayRight}>
+                                    <View
+                                        style={[
+                                            styles.statusBadge,
+                                            enabled ? styles.statusOn : styles.statusOff,
+                                        ]}
+                                    >
+                                        <Text
+                                            style={[
+                                                styles.statusText,
+                                                enabled ? styles.statusTextOn : styles.statusTextOff,
+                                            ]}
+                                        >
+                                            {enabled ? "Available" : "Off"}
+                                        </Text>
+                                    </View>
+
+                                    <View style={styles.timeContainer}>
+                                        <Text style={styles.timeText}>
+                                            {enabled
+                                                ? `${formatTime24To12(from)} - ${formatTime24To12(to)}`
+                                                : `${formatTime24To12(from)} - ${formatTime24To12(to)}`}
+                                        </Text>
+                                    </View>
+                                </View>
+                            </View>
+                        );
+                    })}
+                </View>
+            </View>
+        );
+    };
 
     return (
         <View style={styles.container}>
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => router.push("/search")}>
+                <TouchableOpacity onPress={() => router.push("/user/search")}>
                     <Ionicons name="arrow-back" size={24} color="#fff" />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Service Details</Text>
@@ -281,9 +480,7 @@ export default function Details() {
                                 />
                             ) : (
                                 <View style={styles.avatarPlaceholder}>
-                                    <Text style={styles.avatarText}>
-                                        {getInitials(tutor.name)}
-                                    </Text>
+                                    <Text style={styles.avatarText}>{getInitials(tutor.name)}</Text>
                                 </View>
                             )}
                         </View>
@@ -318,18 +515,30 @@ export default function Details() {
                             <Text style={styles.fullTimeText}>Full-time</Text>
                         </View>
 
-                        <TouchableOpacity
-                            style={styles.messageButton}
-                            onPress={startConversation}
-                        >
+                        <TouchableOpacity style={styles.messageButton} onPress={startConversation}>
                             <Text style={styles.messageButtonText}>Message now</Text>
                         </TouchableOpacity>
                     </View>
                 </View>
 
+                {/* Address */}
+                {(tutor.address || tutor.addressDetails) && (
+                    <View style={styles.sectionCard}>
+                        <Text style={styles.sectionTitle}>Location</Text>
+                        {tutor.address ? (
+                            <Text style={styles.paragraphSmall}>{tutor.address}</Text>
+                        ) : null}
+                        {tutor.addressDetails ? (
+                            <Text style={styles.paragraphSmallMuted}>{tutor.addressDetails}</Text>
+                        ) : null}
+                    </View>
+                )}
+
+
+
                 {/* About Section */}
                 {tutor.bio && (
-                    <View style={styles.section}>
+                    <View style={styles.sectionCard}>
                         <Text style={styles.sectionTitle}>About</Text>
                         <Text style={styles.paragraph}>{tutor.bio}</Text>
                     </View>
@@ -337,7 +546,7 @@ export default function Details() {
 
                 {/* Skills */}
                 {tutor.skills && tutor.skills.length > 0 && (
-                    <View style={styles.section}>
+                    <View style={styles.sectionCard}>
                         <Text style={styles.sectionTitle}>Skills</Text>
                         <View style={styles.skillsContainer}>
                             {tutor.skills.map((skill, index) => (
@@ -349,8 +558,11 @@ export default function Details() {
                     </View>
                 )}
 
+                {/* Preferred Schedule */}
+                {renderSchedule(tutor.availability)}
+
                 {/* Reviews */}
-                <View style={styles.section}>
+                <View style={styles.sectionCard}>
                     <Text style={styles.sectionTitle}>Reviews</Text>
 
                     {enrichedReviews.length === 0 ? (
@@ -364,7 +576,9 @@ export default function Details() {
                                             <Image
                                                 source={{ uri: r.reviewerPhoto }}
                                                 style={styles.reviewerAvatar}
-                                                onError={() => {/* Handle error silently */}}
+                                                onError={() => {
+                                                    /* ignore */
+                                                }}
                                             />
                                         ) : (
                                             <View style={styles.reviewerAvatarPlaceholder}>
@@ -375,9 +589,7 @@ export default function Details() {
                                         )}
                                         <View style={styles.reviewerTextInfo}>
                                             <Text style={styles.reviewerName}>{r.reviewerName ?? "User"}</Text>
-                                            {r.formattedDate && (
-                                                <Text style={styles.reviewDate}>{r.formattedDate}</Text>
-                                            )}
+                                            {r.formattedDate && <Text style={styles.reviewDate}>{r.formattedDate}</Text>}
                                         </View>
                                     </View>
                                     <View style={styles.reviewMeta}>
@@ -386,9 +598,7 @@ export default function Details() {
                                     </View>
                                 </View>
 
-                                {r.comment && (
-                                    <Text style={styles.reviewComment}>{r.comment}</Text>
-                                )}
+                                {r.comment && <Text style={styles.reviewComment}>{r.comment}</Text>}
                             </View>
                         ))
                     )}
@@ -399,8 +609,8 @@ export default function Details() {
                     style={styles.appointmentButton}
                     onPress={() =>
                         router.push({
-                            pathname: "/appointment",
-                            params: { id: tutor?.id }
+                            pathname: "/user/appointment",
+                            params: { id: tutor?.id },
                         })
                     }
                 >
@@ -410,19 +620,19 @@ export default function Details() {
 
             {/* Bottom Navigation */}
             <View style={styles.bottomNav}>
-                <TouchableOpacity onPress={() => router.push("/home")}>
+                <TouchableOpacity onPress={() => router.push("/user/home")}>
                     <Ionicons name="home-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => router.push("/bookinglists")}>
+                <TouchableOpacity onPress={() => router.push("/user/bookinglists")}>
                     <Ionicons name="calendar-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => router.push("/search")}>
+                <TouchableOpacity onPress={() => router.push("/user/search")}>
                     <Ionicons name="search-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => router.push("/message")}>
                     <Ionicons name="chatbubble-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => router.push("/account")}>
+                <TouchableOpacity onPress={() => router.push("/user/account")}>
                     <Ionicons name="person-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
             </View>
@@ -436,20 +646,28 @@ function deg2rad(deg: number) {
     return deg * (Math.PI / 180);
 }
 
-function getDistanceFromLatLonInKm(lat1: number, lon1: number, lat2: number, lon2: number) {
+function getDistanceFromLatLonInKm(
+    lat1: number,
+    lon1: number,
+    lat2: number,
+    lon2: number
+) {
     const R = 6371; // km
     const dLat = deg2rad(lat2 - lat1);
     const dLon = deg2rad(lon2 - lon1);
     const a =
         Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
-        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        Math.cos(deg2rad(lat1)) *
+        Math.cos(deg2rad(lat2)) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return R * c;
 }
 
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: "#F5F5F5" },
+    centered: { justifyContent: "center", alignItems: "center" },
     header: {
         backgroundColor: "#b58dde",
         flexDirection: "row",
@@ -460,15 +678,15 @@ const styles = StyleSheet.create({
         paddingTop: 45,
     },
     headerTitle: { color: "#fff", fontSize: 18, fontWeight: "600" },
-    loading: { marginTop: 150, textAlign: "center", fontSize: 16, color: "#555" },
-    scrollContent: { padding: 16, paddingBottom: 120 },
+    loading: { marginTop: 12, textAlign: "center", fontSize: 14, color: "#fff" },
+    scrollContent: { padding: 16, paddingBottom: 140 },
 
     // Card styles with profile picture
     card: {
         backgroundColor: "#fff",
         borderRadius: 12,
-        padding: 20,
-        marginBottom: 20,
+        padding: 18,
+        marginBottom: 14,
         shadowColor: "#000",
         shadowOpacity: 0.08,
         shadowRadius: 8,
@@ -477,21 +695,21 @@ const styles = StyleSheet.create({
     profileHeader: {
         flexDirection: "row",
         alignItems: "flex-start",
-        marginBottom: 16,
+        marginBottom: 12,
     },
     avatarContainer: {
-        marginRight: 16,
+        marginRight: 14,
     },
     profileImage: {
-        width: 70,
-        height: 70,
-        borderRadius: 35,
-        backgroundColor: '#f0f0f0',
+        width: 72,
+        height: 72,
+        borderRadius: 36,
+        backgroundColor: "#f0f0f0",
     },
     avatarPlaceholder: {
-        width: 70,
-        height: 70,
-        borderRadius: 35,
+        width: 72,
+        height: 72,
+        borderRadius: 36,
         backgroundColor: "#b58dde",
         justifyContent: "center",
         alignItems: "center",
@@ -508,37 +726,37 @@ const styles = StyleSheet.create({
         fontSize: 20,
         fontWeight: "700",
         color: "#333",
-        marginBottom: 6
+        marginBottom: 6,
     },
     distanceContainer: {
         flexDirection: "row",
         alignItems: "center",
-        marginBottom: 4
+        marginBottom: 4,
     },
     distanceText: {
         fontSize: 14,
         color: "#777",
-        marginLeft: 6
+        marginLeft: 6,
     },
     ratingContainer: {
         flexDirection: "row",
         alignItems: "center",
-        marginBottom: 6
+        marginBottom: 6,
     },
     ratingStars: {
         flexDirection: "row",
-        alignItems: "center"
+        alignItems: "center",
     },
     ratingText: {
         fontSize: 14,
         color: "#333",
         marginLeft: 6,
-        fontWeight: "600"
+        fontWeight: "600",
     },
     reviewCount: {
         fontSize: 14,
         color: "#777",
-        marginLeft: 8
+        marginLeft: 8,
     },
     rate: {
         fontSize: 16,
@@ -574,67 +792,127 @@ const styles = StyleSheet.create({
         fontWeight: "600",
     },
 
-    section: {
-        marginBottom: 20
+    /* Section card (used for schedule, about, reviews etc) */
+    sectionCard: {
+        backgroundColor: "#fff",
+        borderRadius: 12,
+        padding: 14,
+        marginBottom: 14,
+        borderWidth: 1,
+        borderColor: "#F0E7FB",
+        shadowColor: "#000",
+        shadowOpacity: 0.03,
+        shadowRadius: 4,
+        elevation: 1,
     },
     sectionTitle: {
-        fontSize: 18,
+        fontSize: 16,
         fontWeight: "700",
         color: "#333",
-        marginBottom: 12
+    },
+    smallHint: {
+        fontSize: 12,
+        color: "#888",
     },
     paragraph: {
         fontSize: 14,
         color: "#555",
         backgroundColor: "#fff",
-        padding: 16,
-        borderRadius: 10,
+        padding: 12,
+        borderRadius: 8,
         lineHeight: 20,
-        shadowColor: "#000",
-        shadowOpacity: 0.03,
-        shadowRadius: 3,
-        elevation: 1,
+        marginTop: 10,
     },
-    noReviews: {
-        color: "#666",
-        fontStyle: "italic",
-        textAlign: "center",
-        padding: 20,
+    paragraphSmall: {
+        fontSize: 14,
+        color: "#444",
+        marginTop: 8,
     },
-    appointmentButton: {
-        backgroundColor: "#b58dde",
-        borderRadius: 30,
-        paddingVertical: 16,
-        alignItems: "center",
-        marginBottom: 20,
-        shadowColor: "#000",
-        shadowOpacity: 0.1,
-        shadowRadius: 6,
-        elevation: 3,
+    paragraphSmallMuted: {
+        fontSize: 13,
+        color: "#777",
+        marginTop: 6,
     },
-    appointmentText: {
-        color: "#fff",
-        fontSize: 16,
-        fontWeight: "700"
-    },
-    bottomNav: {
+
+    /* Schedule */
+    scheduleHeaderRow: {
         flexDirection: "row",
-        justifyContent: "space-around",
-        paddingVertical: 14,
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginBottom: 12,
+    },
+    scheduleGrid: {
         borderTopWidth: 1,
-        borderColor: "#ddd",
-        backgroundColor: "#fff",
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
+        borderTopColor: "#F3EBFB",
+        marginTop: 8,
+    },
+    dayRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        paddingVertical: 10,
+        borderBottomWidth: 1,
+        borderBottomColor: "#F3EBFB",
+    },
+    dayLeft: {
+        flexDirection: "column",
+    },
+    dayName: {
+        fontSize: 14,
+        fontWeight: "700",
+        color: "#333",
+    },
+    dayFullName: {
+        fontSize: 12,
+        color: "#888",
+        marginTop: 2,
+    },
+    dayRight: {
+        flexDirection: "row",
+        alignItems: "center",
+    },
+    statusBadge: {
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 14,
+        marginRight: 12,
+        borderWidth: 1,
+    },
+    statusOn: {
+        backgroundColor: "#EAF7EE",
+        borderColor: "#C7EFC8",
+    },
+    statusOff: {
+        backgroundColor: "#FFF5F7",
+        borderColor: "#F6D0DA",
+    },
+    statusText: {
+        fontSize: 12,
+        fontWeight: "700",
+    },
+    statusTextOn: { color: "#2F8F47" },
+    statusTextOff: { color: "#E34B69" },
+    timeContainer: {
+        minWidth: 160,
+        alignItems: "flex-end",
+    },
+    timeText: {
+        fontSize: 13,
+        color: "#555",
+        fontWeight: "600",
+    },
+    noSchedule: {
+        fontStyle: "italic",
+        color: "#666",
+        marginTop: 8,
     },
 
     /* Skills */
     skillsContainer: {
         flexDirection: "row",
         flexWrap: "wrap",
-        gap: 8
+        gap: 8,
+        marginTop: 8,
     },
     skillPill: {
         backgroundColor: "#EDE4F7",
@@ -647,14 +925,14 @@ const styles = StyleSheet.create({
     skillText: {
         fontSize: 13,
         color: "#7B52AB",
-        fontWeight: "500"
+        fontWeight: "500",
     },
 
     /* Reviews */
     reviewCard: {
         backgroundColor: "#fff",
         borderRadius: 12,
-        padding: 16,
+        padding: 12,
         marginBottom: 10,
         borderWidth: 1,
         borderColor: "#F0E7FB",
@@ -679,7 +957,7 @@ const styles = StyleSheet.create({
         height: 40,
         borderRadius: 20,
         marginRight: 12,
-        backgroundColor: '#f0f0f0',
+        backgroundColor: "#f0f0f0",
     },
     reviewerAvatarPlaceholder: {
         width: 40,
@@ -706,7 +984,7 @@ const styles = StyleSheet.create({
     },
     reviewMeta: {
         flexDirection: "row",
-        alignItems: "center"
+        alignItems: "center",
     },
     reviewRatingText: {
         marginLeft: 6,
@@ -723,5 +1001,42 @@ const styles = StyleSheet.create({
         fontSize: 14,
         lineHeight: 20,
         marginTop: 8,
+    },
+
+    noReviews: {
+        color: "#666",
+        fontStyle: "italic",
+        textAlign: "center",
+        padding: 12,
+    },
+
+    appointmentButton: {
+        backgroundColor: "#b58dde",
+        borderRadius: 30,
+        paddingVertical: 16,
+        alignItems: "center",
+        marginBottom: 20,
+        shadowColor: "#000",
+        shadowOpacity: 0.1,
+        shadowRadius: 6,
+        elevation: 3,
+    },
+    appointmentText: {
+        color: "#fff",
+        fontSize: 16,
+        fontWeight: "700",
+    },
+
+    bottomNav: {
+        flexDirection: "row",
+        justifyContent: "space-around",
+        paddingVertical: 14,
+        borderTopWidth: 1,
+        borderColor: "#ddd",
+        backgroundColor: "#fff",
+        position: "absolute",
+        bottom: 0,
+        left: 0,
+        right: 0,
     },
 });

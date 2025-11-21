@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from "expo-router";
-import { db } from "../firebaseConfig";
+import { db } from "../../firebaseConfig";
 import { collection, getDocs, query, where } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 
@@ -258,7 +258,7 @@ const Home = () => {
     const renderTutorCard = ({ item }: { item: UserData }) => {
         const uri = getPictureUri(item.picture);
         return (
-            <TouchableOpacity style={styles.tutorCard} onPress={() => router.push({ pathname: "/details", params: { id: item.id } })}>
+            <TouchableOpacity style={styles.tutorCard} onPress={() => router.push({ pathname: "/user/details", params: { id: item.id } })}>
                 <View style={styles.tutorHeader}>
                     {uri ? (
                         <Image source={{ uri }} style={styles.avatar} resizeMode="cover" />
@@ -281,7 +281,7 @@ const Home = () => {
     const renderBabysitterCard = ({ item }: { item: UserData }) => {
         const uri = getPictureUri(item.picture);
         return (
-            <TouchableOpacity style={styles.babysitterCard} onPress={() => router.push({ pathname: "/details", params: { id: item.id } })}>
+            <TouchableOpacity style={styles.babysitterCard} onPress={() => router.push({ pathname: "/user/details", params: { id: item.id } })}>
                 <View style={styles.babysitterHeader}>
                     {uri ? (
                         <Image source={{ uri }} style={styles.avatar} resizeMode="cover" />
@@ -310,7 +310,7 @@ const Home = () => {
                     <Text style={styles.welcome}>Welcome back!</Text>
                 </View>
                 <TouchableOpacity
-                    onPress={() => router.push("/account")}
+                    onPress={() => router.push("/user/account")}
                     style={styles.profileIcon}
                 >
                     <Ionicons name="person-circle-outline" size={40} color="#fff" />
@@ -414,16 +414,16 @@ const Home = () => {
                 onPress={() => router.push("/chatbot")}
                 style={styles.floatingChatbotButton}
             >
-                <Image source={require("../assets/images/chat-bot.png")} style={styles.floatingChatbotIcon} />
+                <Image source={require("../../assets/images/chat-bot.png")} style={styles.floatingChatbotIcon} />
             </TouchableOpacity>
 
             {/* Bottom Nav */}
             <View style={styles.bottomNav}>
-                <TouchableOpacity onPress={() => router.push("/service_home")}><Ionicons name="home-outline" size={24} color="#8e44ad" /></TouchableOpacity>
-                <TouchableOpacity onPress={() => router.push("/apply_child_service")}><Ionicons name="calendar-outline" size={24} color="#8e44ad" /></TouchableOpacity>
-                <TouchableOpacity onPress={() => router.push("/help_centre")}><Ionicons name="search-outline" size={24} color="#8e44ad" /></TouchableOpacity>
+                <TouchableOpacity onPress={() => router.push("/user/home")}><Ionicons name="home-outline" size={24} color="#8e44ad" /></TouchableOpacity>
+                <TouchableOpacity onPress={() => router.push("/user/bookinglists")}><Ionicons name="calendar-outline" size={24} color="#8e44ad" /></TouchableOpacity>
+                <TouchableOpacity onPress={() => router.push("/user/search")}><Ionicons name="search-outline" size={24} color="#8e44ad" /></TouchableOpacity>
                 <TouchableOpacity onPress={() => router.push("/notification")}><Ionicons name="chatbubble-outline" size={24} color="#8e44ad" /></TouchableOpacity>
-                <TouchableOpacity onPress={() => router.push("/account")}><Ionicons name="person-outline" size={24} color="#8e44ad" /></TouchableOpacity>
+                <TouchableOpacity onPress={() => router.push("/user/account")}><Ionicons name="person-outline" size={24} color="#8e44ad" /></TouchableOpacity>
             </View>
         </View>
     );

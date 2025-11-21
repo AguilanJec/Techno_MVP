@@ -150,7 +150,7 @@ const ServiceHome = () => {
                     <Text style={styles.welcome}>Welcome back!</Text>
                 </View>
                 <TouchableOpacity
-                    onPress={() => router.push("/account")}
+                    onPress={() => router.push("/user/account")}
                     style={styles.profileIcon}
                 >
                     <Ionicons name="person-circle-outline" size={40} color="#fff" />

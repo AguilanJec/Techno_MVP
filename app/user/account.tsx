@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from "react-nati
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { doc, getDoc } from "firebase/firestore";
-import { auth, db } from "../firebaseConfig";
+import { auth, db } from "../../firebaseConfig";
 import { onAuthStateChanged } from "firebase/auth";
 
 export default function AccountScreen() {
@@ -34,7 +34,7 @@ export default function AccountScreen() {
         <View style={styles.container}>
             {/* HEADER */}
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => router.push("/home")}>
+                <TouchableOpacity onPress={() => router.push("/user/home")}>
                     <Ionicons name="arrow-back" size={24} color="#fff" />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Account</Text>
@@ -63,7 +63,7 @@ export default function AccountScreen() {
                 {/* ACCOUNT LINKS */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>Account</Text>
-                    <TouchableOpacity style={styles.item} onPress={() => router.push("/bookinglists")}>
+                    <TouchableOpacity style={styles.item} onPress={() => router.push("/user/bookinglists")}>
                         <Text style={styles.itemText}>My bookings</Text>
                         <Ionicons name="chevron-forward" size={18} color="#777" />
                     </TouchableOpacity>
@@ -129,19 +129,19 @@ export default function AccountScreen() {
 
             {/* BOTTOM NAVIGATION BAR */}
             <View style={styles.bottomNav}>
-                <TouchableOpacity onPress={() => router.push("/home")}>
+                <TouchableOpacity onPress={() => router.push("/user/home")}>
                     <Ionicons name="home-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => router.push("/bookinglists")}>
+                <TouchableOpacity onPress={() => router.push("/user/bookinglists")}>
                     <Ionicons name="calendar-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => router.push("/search")}>
+                <TouchableOpacity onPress={() => router.push("/user/search")}>
                     <Ionicons name="search-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => router.push("/message")}>
                     <Ionicons name="chatbubble-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => router.push("/account")}>
+                <TouchableOpacity onPress={() => router.push("/user/account")}>
                     <Ionicons name="person" size={24} color="#8e44ad" />
                 </TouchableOpacity>
             </View>

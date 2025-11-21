@@ -51,7 +51,7 @@ export default function LoginScreen() {
                     Alert.alert("Success", "Logged in with Google!");
                     // You might want to fetch user role here too for Google login
                     // For now, default to home or implement role check
-                    router.replace("/home");
+                    router.replace("/user/home");
                 })
                 .catch((error) => {
                     console.error(error);
@@ -100,7 +100,7 @@ export default function LoginScreen() {
                         router.push("/service_home"); // Navigate service providers to their home
                     } else {
                         // Default to parent home or handle other roles if needed
-                        router.push("/home");
+                        router.push("/user/home");
                     }
                 } else {
                     // Handle case where user doc doesn't exist in either collection

@@ -6,7 +6,6 @@ import {
     StyleSheet,
     TouchableOpacity,
     ScrollView,
-    FlatList,
     TextInput,
     Alert,
     ActivityIndicator,
@@ -15,7 +14,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { getAuth } from "firebase/auth";
-import { db } from "../firebaseConfig";
+import { db } from "../../firebaseConfig";
 import { doc, getDoc, addDoc, collection, serverTimestamp } from "firebase/firestore";
 import DateTimePicker from '@react-native-community/datetimepicker';
 
@@ -39,7 +38,7 @@ const WEEKDAYS = [
 ];
 
 const HOURS_12 = Array.from({ length: 12 }, (_, i) => i + 1);
-const MINUTES = ["00", "30"];
+const MINUTES = ["00", "30"]; // keep original granularity
 
 function pad(n: number) {
     return n < 10 ? `0${n}` : `${n}`;
@@ -75,7 +74,7 @@ export default function AppointmentScreen() {
     const [selectedDays, setSelectedDays] = useState<string[]>([]); // keys like 'mon','thu'...
     const [scheduleName, setScheduleName] = useState(""); // editable label
 
-    // common time selection
+    // common time selection (these remain to preserve DB shape)
     const [startHour, setStartHour] = useState<number>(7);
     const [startMinute, setStartMinute] = useState<string>("30");
     const [startAmpm, setStartAmpm] = useState<"AM" | "PM">("AM");
@@ -86,6 +85,10 @@ export default function AppointmentScreen() {
 
     const [notes, setNotes] = useState("");
     const [submitting, setSubmitting] = useState(false);
+
+    // NEW: native time picker state
+    const [showTimePicker, setShowTimePicker] = useState(false);
+    const [timePickerTarget, setTimePickerTarget] = useState<"start" | "end">("start");
 
     const auth = getAuth();
     const currentUser = auth.currentUser;
@@ -174,7 +177,104 @@ export default function AppointmentScreen() {
         }
     };
 
-    // calculate duration in hours. If end <= start we assume next-day end (rare for your use case)
+    // NEW: Helper to build Date object from hour/minute/ampm (for picker initial value)
+    function buildDateFromTime(hour12: number, minute: string, ampm: "AM" | "PM") {
+        const d = new Date();
+        let hour24 = hour12 % 12;
+        if (ampm === "PM") hour24 += 12;
+        d.setHours(hour24, parseInt(minute, 10), 0, 0);
+        return d;
+    }
+
+    // NEW: Round minute to 00 or 30 (keeps DB minute options unchanged)
+    function roundTo30(min: number) {
+        if (min < 15) return 0;
+        if (min < 45) return 30;
+        return 0; // will carry hour +1 in caller
+    }
+
+    // NEW: Set time from a Date object into our hour/minute/ampm state for either 'start' or 'end'
+    function setTimeFromDate(target: "start" | "end", date: Date) {
+        let hour24 = date.getHours();
+        let minuteRaw = date.getMinutes();
+        // rounding
+        const rounded = roundTo30(minuteRaw);
+        let carryHour = 0;
+        let minuteStr = pad(rounded);
+        if (rounded === 0 && minuteRaw >= 45) {
+            // round up to next hour
+            carryHour = 1;
+        }
+
+        let newHour24 = hour24 + carryHour;
+        newHour24 = newHour24 % 24;
+
+        const ampm = newHour24 >= 12 ? "PM" : "AM";
+        let hour12 = newHour24 % 12;
+        if (hour12 === 0) hour12 = 12;
+
+        if (target === "start") {
+            setStartHour(hour12);
+            setStartMinute(minuteStr);
+            setStartAmpm(ampm as "AM" | "PM");
+            // if end <= new start, bump end by +1 hour
+            const startDec = toDecimalHour(hour12, minuteStr, ampm as "AM" | "PM");
+            const endDec = toDecimalHour(endHour, endMinute, endAmpm);
+            if (endDec - startDec <= 0) {
+                // add 1 hour to start
+                let newEndDec = startDec + 1;
+                if (newEndDec >= 24) newEndDec -= 24;
+                // convert back to hour/min/ampm (round minutes to existing granularity)
+                const newEndHour24 = Math.floor(newEndDec);
+                const newEndMinute = Math.round((newEndDec - Math.floor(newEndDec)) * 60);
+                const newRounded = roundTo30(newEndMinute);
+                let carry = 0;
+                if (newRounded === 0 && newEndMinute >= 45) carry = 1;
+                let finalHour24 = newEndHour24 + carry;
+                finalHour24 = finalHour24 % 24;
+                const finalAmpm = finalHour24 >= 12 ? "PM" : "AM";
+                let finalHour12 = finalHour24 % 12;
+                if (finalHour12 === 0) finalHour12 = 12;
+                setEndHour(finalHour12);
+                setEndMinute(pad(newRounded));
+                setEndAmpm(finalAmpm as "AM" | "PM");
+            }
+        } else {
+            setEndHour(hour12);
+            setEndMinute(minuteStr);
+            setEndAmpm(ampm as "AM" | "PM");
+
+            // If end <= start, bump end to start + 1 hour
+            const startDec = toDecimalHour(startHour, startMinute, startAmpm);
+            const endDec = toDecimalHour(hour12, minuteStr, ampm as "AM" | "PM");
+            if (endDec - startDec <= 0) {
+                // set end = start + 1
+                let newEnd = startDec + 1;
+                if (newEnd >= 24) newEnd -= 24;
+                const newEndHour24 = Math.floor(newEnd);
+                const newEndMinute = Math.round((newEnd - Math.floor(newEnd)) * 60);
+                const newRounded = roundTo30(newEndMinute);
+                let carry = 0;
+                if (newRounded === 0 && newEndMinute >= 45) carry = 1;
+                let finalHour24 = newEndHour24 + carry;
+                finalHour24 = finalHour24 % 24;
+                const finalAmpm = finalHour24 >= 12 ? "PM" : "AM";
+                let finalHour12 = finalHour24 % 12;
+                if (finalHour12 === 0) finalHour12 = 12;
+                setEndHour(finalHour12);
+                setEndMinute(pad(newRounded));
+                setEndAmpm(finalAmpm as "AM" | "PM");
+            }
+        }
+    }
+
+    // NEW: open native time picker for start or end
+    function openTimePicker(target: "start" | "end") {
+        setTimePickerTarget(target);
+        setShowTimePicker(true);
+    }
+
+    // compute duration in hours. If end <= start we assume next-day end (rare)
     const durationHours = useMemo(() => {
         const startDec = toDecimalHour(startHour, startMinute, startAmpm);
         const endDec = toDecimalHour(endHour, endMinute, endAmpm);
@@ -289,84 +389,98 @@ export default function AppointmentScreen() {
         }
     };
 
-    // helper to quickly render time pickers (hours/minutes/ampm)
-    function TimePickerRow({
-                               label,
-                               hour,
-                               minute,
-                               ampm,
-                               setHour,
-                               setMinute,
-                               setAmpm,
-                           }: {
-        label: string;
-        hour: number;
-        minute: string;
-        ampm: "AM" | "PM";
-        setHour: (h: number) => void;
-        setMinute: (m: string) => void;
-        setAmpm: (a: "AM" | "PM") => void;
-    }) {
+    // ---------- REPLACED TIME PICKER UI START ----------
+    // Compact Start/End row + presets + native DateTimePicker modal handler
+    function TimeRangePickerSection() {
+        const startDisplay = timeLabel(startHour, startMinute, startAmpm);
+        const endDisplay = timeLabel(endHour, endMinute, endAmpm);
+
+        // presets: apply to make quick duration choices
+        function applyPresetMinutes(minutes: number) {
+            // compute end relative to current end
+            const endDecCurrent = toDecimalHour(endHour, endMinute, endAmpm);
+            let newEndDec = endDecCurrent + minutes / 60;
+            if (newEndDec >= 24) newEndDec -= 24;
+
+            const hour24 = Math.floor(newEndDec);
+            const rawMin = Math.round((newEndDec - hour24) * 60);
+
+            const rounded = roundTo30(rawMin);
+            let carry = 0;
+            if (rounded === 0 && rawMin >= 45) carry = 1;
+
+            let finalHour24 = hour24 + carry;
+            finalHour24 = finalHour24 % 24;
+            const finalAmpm = finalHour24 >= 12 ? "PM" : "AM";
+            let finalHour12 = finalHour24 % 12;
+            if (finalHour12 === 0) finalHour12 = 12;
+
+            setEndHour(finalHour12);
+            setEndMinute(pad(rounded));
+            setEndAmpm(finalAmpm as "AM" | "PM");
+        }
+
+
+        // native picker onChange (for both platforms)
+        function onTimePicked(event: any, date?: Date | undefined) {
+            // On Android, when dismiss, event.type === 'dismissed'
+            setShowTimePicker(false);
+            if (!date || (event && event.type === 'dismissed')) return;
+            setTimeFromDate(timePickerTarget, date);
+        }
+
+        // value for DateTimePicker initial
+        const initialDate = timePickerTarget === "start"
+            ? buildDateFromTime(startHour, startMinute, startAmpm)
+            : buildDateFromTime(endHour, endMinute, endAmpm);
+
         return (
-            <View style={styles.timeRow}>
-                <Text style={styles.smallLabel}>{label}</Text>
-                <View style={styles.timeSelectors}>
-                    <View style={styles.pickerGroup}>
-                        <FlatList
-                            horizontal
-                            showsHorizontalScrollIndicator={false}
-                            data={HOURS_12}
-                            keyExtractor={(i) => String(i)}
-                            renderItem={({ item }) => (
-                                <TouchableOpacity
-                                    style={[styles.pickerChip, item === hour && styles.pickerChipActive]}
-                                    onPress={() => setHour(item)}
-                                >
-                                    <Text style={[styles.pickerChipText, item === hour && styles.pickerChipTextActive]}>
-                                        {item}
-                                    </Text>
-                                </TouchableOpacity>
-                            )}
-                        />
-                    </View>
+            <View style={styles.section}>
+                <Text style={styles.sectionTitleSmall}>Choose time</Text>
 
-                    <View style={styles.pickerGroupSmall}>
-                        <FlatList
-                            horizontal
-                            showsHorizontalScrollIndicator={false}
-                            data={MINUTES}
-                            keyExtractor={(i) => i}
-                            renderItem={({ item }) => (
-                                <TouchableOpacity
-                                    style={[styles.pickerChipSmall, item === minute && styles.pickerChipActiveSmall]}
-                                    onPress={() => setMinute(item)}
-                                >
-                                    <Text style={[styles.pickerChipTextSmall, item === minute && styles.pickerChipTextActiveSmall]}>
-                                        {item}
-                                    </Text>
-                                </TouchableOpacity>
-                            )}
-                        />
-                    </View>
-
-                    <View style={styles.pickerGroupSmall}>
-                        <TouchableOpacity
-                            style={[styles.ampmBtn, ampm === "AM" && styles.ampmBtnActive]}
-                            onPress={() => setAmpm("AM")}
-                        >
-                            <Text style={[styles.ampmText, ampm === "AM" && styles.ampmTextActive]}>AM</Text>
+                <View style={styles.timeRowNew}>
+                    <View style={styles.timeBox}>
+                        <Text style={styles.smallLabel}>Start</Text>
+                        <TouchableOpacity style={styles.timeButton} onPress={() => openTimePicker("start")}>
+                            <Text style={styles.timeButtonText}>{startDisplay}</Text>
                         </TouchableOpacity>
-                        <TouchableOpacity
-                            style={[styles.ampmBtn, ampm === "PM" && styles.ampmBtnActive]}
-                            onPress={() => setAmpm("PM")}
-                        >
-                            <Text style={[styles.ampmText, ampm === "PM" && styles.ampmTextActive]}>PM</Text>
+                    </View>
+
+                    <View style={styles.timeBox}>
+                        <Text style={styles.smallLabel}>End</Text>
+                        <TouchableOpacity style={styles.timeButton} onPress={() => openTimePicker("end")}>
+                            <Text style={styles.timeButtonText}>{endDisplay}</Text>
                         </TouchableOpacity>
                     </View>
                 </View>
+
+                <View style={{ flexDirection: "row", marginTop: 10 }}>
+                    <TouchableOpacity style={styles.presetBtn} onPress={() => applyPresetMinutes(30)}>
+                        <Text style={styles.presetText}>+30 min</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.presetBtn, { marginLeft: 8 }]} onPress={() => applyPresetMinutes(60)}>
+                        <Text style={styles.presetText}>+1 hr</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.presetBtn, { marginLeft: 8 }]} onPress={() => applyPresetMinutes(120)}>
+                        <Text style={styles.presetText}>+2 hr</Text>
+                    </TouchableOpacity>
+                    <View style={{ flex: 1 }} />
+                    <Text style={styles.smallNote}>{`${durationHours.toFixed(2)} hrs`}</Text>
+                </View>
+
+                {showTimePicker && (
+                    <DateTimePicker
+                        value={initialDate}
+                        mode="time"
+                        display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                        onChange={onTimePicked}
+                        minuteInterval={15} // available on iOS, Android ignore
+                    />
+                )}
             </View>
         );
     }
+    // ---------- REPLACED TIME PICKER UI END ----------
 
     if (loadingProvider) {
         return (
@@ -504,28 +618,9 @@ export default function AppointmentScreen() {
                     </View>
                 )}
 
-                {/* Time pickers */}
-                <View style={styles.section}>
-                    <Text style={styles.sectionTitleSmall}>Choose time</Text>
-                    <TimePickerRow
-                        label="Start"
-                        hour={startHour}
-                        minute={startMinute}
-                        ampm={startAmpm}
-                        setHour={setStartHour}
-                        setMinute={setStartMinute}
-                        setAmpm={setStartAmpm}
-                    />
-                    <TimePickerRow
-                        label="End"
-                        hour={endHour}
-                        minute={endMinute}
-                        ampm={endAmpm}
-                        setHour={setEndHour}
-                        setMinute={setEndMinute}
-                        setAmpm={setEndAmpm}
-                    />
-                </View>
+                {/* ---------- REPLACED CHOOSE TIME (only this section changed) ---------- */}
+                <TimeRangePickerSection />
+                {/* ---------- END replaced choose time ---------- */}
 
                 {/* Notes */}
                 <View style={styles.section}>
@@ -649,7 +744,43 @@ const styles = StyleSheet.create({
         marginTop: 8,
     },
 
-    // time row
+    // ---------- new time UI styles ----------
+    timeRowNew: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+    },
+    timeBox: {
+        flex: 1,
+        marginRight: 10,
+    },
+    timeButton: {
+        backgroundColor: "#fff",
+        borderRadius: 10,
+        paddingVertical: 12,
+        paddingHorizontal: 12,
+        borderWidth: 1,
+        borderColor: "#F0E7FB",
+        alignItems: "center",
+    },
+    timeButtonText: {
+        fontSize: 16,
+        color: "#333",
+        fontWeight: "700",
+    },
+    presetBtn: {
+        backgroundColor: "#fff",
+        borderRadius: 10,
+        paddingVertical: 8,
+        paddingHorizontal: 12,
+        borderWidth: 1,
+        borderColor: "#F0E7FB",
+    },
+    presetText: {
+        color: "#666",
+        fontWeight: "700",
+    },
+
+    // previous (unused but kept for compatibility)
     timeRow: { marginTop: 8 },
     timeSelectors: { flexDirection: "row", alignItems: "center" },
     pickerGroup: { flex: 1 },

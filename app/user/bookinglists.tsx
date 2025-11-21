@@ -7,11 +7,13 @@ import {
     StyleSheet,
     ScrollView,
     ActivityIndicator,
+    Pressable,
+    Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { getAuth, onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
-import { db } from '../firebaseConfig';
+import { getAuth, onAuthStateChanged } from 'firebase/auth';
+import { db } from '../../firebaseConfig';
 import {
     collection,
     query,
@@ -21,31 +23,32 @@ import {
     Query,
     QuerySnapshot,
     DocumentData,
+    doc,
+    getDoc,
 } from 'firebase/firestore';
 
 type Booking = {
     id: string;
     name: string; // provider name
     distance: string;
-    rating: number;
-    reviews: number;
+    rating: number; // average rating (computed)
+    reviews: number; // review count
     price: number;
     favorite?: boolean;
     status: string;
     providerId?: string;
-    // internal use: for sorting only (not required in UI)
+    picture?: string | null; // data URI or remote url
     _createdAt?: number;
 };
 
 const MyBookingsListScreen: React.FC = () => {
     const router = useRouter();
-    const [selectedTab, setSelectedTab] = useState<'All' | 'Pending' | 'Ongoing'>('All');
+    const [selectedTab, setSelectedTab] = useState<'All' | 'Pending' | 'Ongoing' | 'Completed'>('All');
     const [bookings, setBookings] = useState<Booking[]>([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         const auth = getAuth();
-        // Keep track of unsubscribe functions from all listeners
         const unsubscribers: Array<() => void> = [];
 
         const cleanup = () => {
@@ -55,17 +58,18 @@ const MyBookingsListScreen: React.FC = () => {
             unsubscribers.length = 0;
         };
 
-        const mapDocToBooking = (doc: DocumentData) => {
-            const d = doc as any;
+        // provider cache to avoid refetching the same provider many times
+        const providerCache = new Map<string, { avg: number; count: number; picture?: string | null }>();
+
+        const mapDocToBooking = (docData: DocumentData) => {
+            const d = docData as any;
             const rawStatus = (d.status ?? 'pending').toString().toLowerCase();
             const statusLabel =
-                rawStatus === 'ongoing' ? 'Ongoing' : rawStatus === 'completed' ? 'Completed' : 'Pending';
+                rawStatus === 'ongoing' ? 'Ongoing' : rawStatus === 'completed' ? 'Completed' : (rawStatus === 'cancelled' ? 'Cancelled' : 'Pending');
 
-            // parse createdAt safely to a number for sorting
             let createdAtNum = 0;
             try {
                 if (d.createdAt) {
-                    // Firestore Timestamp has toMillis()
                     if (typeof d.createdAt.toMillis === 'function') {
                         createdAtNum = d.createdAt.toMillis();
                     } else if (typeof d.createdAt === 'number') {
@@ -79,7 +83,7 @@ const MyBookingsListScreen: React.FC = () => {
             }
 
             return {
-                id: doc.id,
+                id: docData.id,
                 name: d.providerName ?? 'Provider',
                 distance: d.providerDistance ?? d.distance ?? '—',
                 rating: typeof d.providerRating === 'number' ? d.providerRating : 0,
@@ -95,30 +99,96 @@ const MyBookingsListScreen: React.FC = () => {
             } as Booking;
         };
 
-        const handleSnapshot = (snap: QuerySnapshot<DocumentData>, docsMap: Map<string, Booking>) => {
-            snap.docs.forEach((doc) => {
-                const booking = mapDocToBooking({ id: doc.id, ...doc.data() });
-                docsMap.set(booking.id, booking);
-            });
+        // handleSnapshot is async because we fetch provider docs
+        const handleSnapshot = async (snap: QuerySnapshot<DocumentData>, docsMap: Map<string, Booking>) => {
+            try {
+                // integrate snapshot docs into docsMap
+                snap.docs.forEach((docSnap) => {
+                    const booking = mapDocToBooking({ id: docSnap.id, ...docSnap.data() });
+                    docsMap.set(booking.id, booking);
+                });
 
-            // create array from map, sort by createdAt desc (fallback to id if no date)
-            const arr = Array.from(docsMap.values()).sort((a, b) => {
-                const ta = a._createdAt ?? 0;
-                const tb = b._createdAt ?? 0;
-                // newest first
-                if (ta === tb) return a.id.localeCompare(b.id);
-                return tb - ta;
-            });
+                // create array from map, sort by createdAt desc (fallback to id if no date)
+                const arr = Array.from(docsMap.values()).sort((a, b) => {
+                    const ta = a._createdAt ?? 0;
+                    const tb = b._createdAt ?? 0;
+                    if (ta === tb) return a.id.localeCompare(b.id);
+                    return tb - ta;
+                });
 
-            // strip internal _createdAt before setting state
-            const cleaned = arr.map(({ _createdAt, ...rest }) => rest);
-            setBookings(cleaned);
-            setLoading(false);
+                // collect unique providerIds we need to ensure have provider info for
+                const providerIds = Array.from(new Set(arr.map((r) => r.providerId).filter(Boolean)));
+
+                // fetch provider docs for ids not in cache
+                const missing = providerIds.filter((id) => !providerCache.has(id!));
+                if (missing.length > 0) {
+                    await Promise.all(
+                        missing.map(async (pid) => {
+                            try {
+                                const pref = doc(db, 'providers', pid!);
+                                const psnap = await getDoc(pref);
+                                if (!psnap.exists()) {
+                                    providerCache.set(pid!, { avg: 0, count: 0, picture: null });
+                                    return;
+                                }
+                                const p = psnap.data() as any;
+                                const reviews: any[] = Array.isArray(p.reviews) ? p.reviews : [];
+                                let sum = 0;
+                                let count = 0;
+                                for (const r of reviews) {
+                                    if (!r) continue;
+                                    const rr = typeof r.rating === 'number' ? r.rating : parseFloat(r.rating) || 0;
+                                    if (rr > 0) {
+                                        sum += rr;
+                                        count++;
+                                    }
+                                }
+                                const avg = count > 0 ? Math.round((sum / count) * 10) / 10 : 0; // one decimal
+                                // clean picture field: if it's like url(data:...), extract inner data URI
+                                let pic: string | null = null;
+                                if (typeof p.picture === 'string' && p.picture.trim() !== '') {
+                                    const s = p.picture.trim();
+                                    // remove url( ... ) wrapper if present and any surrounding quotes
+                                    const extracted = s.replace(/^url\((['"])?/, '').replace(/(['"])?\)$/, '');
+                                    pic = extracted;
+                                } else {
+                                    pic = null;
+                                }
+                                providerCache.set(pid!, { avg, count, picture: pic });
+                            } catch (err) {
+                                console.warn('failed to load provider', pid, err);
+                                providerCache.set(pid!, { avg: 0, count: 0, picture: null });
+                            }
+                        })
+                    );
+                }
+
+                // merge provider info into bookings array
+                const merged = arr.map((b) => {
+                    const info = b.providerId ? providerCache.get(b.providerId) : undefined;
+                    return {
+                        ...b,
+                        rating: info ? info.avg : b.rating,
+                        reviews: info ? info.count : b.reviews,
+                        picture: info ? info.picture ?? null : null,
+                    };
+                });
+
+                // strip internal _createdAt before setting state
+                const cleaned = merged.map(({ _createdAt, ...rest }) => rest);
+                setBookings(cleaned);
+                setLoading(false);
+            } catch (err) {
+                console.warn('handleSnapshot error', err);
+                // fallback: set whatever docsMap has
+                const arr = Array.from(docsMap.values()).map(({ _createdAt, ...rest }) => rest);
+                setBookings(arr);
+                setLoading(false);
+            }
         };
 
         const authUnsub = onAuthStateChanged(auth, (user) => {
             // clear previous listeners if any
-            console.log("AUTH USER:", user?.uid, user?.email);
             cleanup();
             setBookings([]);
             setLoading(true);
@@ -129,7 +199,6 @@ const MyBookingsListScreen: React.FC = () => {
                 return;
             }
 
-            // Build queries: by userId (auth uid) and by userEmail (auth email).
             const queries: Query<DocumentData>[] = [];
 
             try {
@@ -143,7 +212,7 @@ const MyBookingsListScreen: React.FC = () => {
                     );
                 }
             } catch (e) {
-                // If orderBy on createdAt isn't valid for your data, remove orderBy above.
+                // ignore
             }
 
             if (user.email) {
@@ -160,7 +229,6 @@ const MyBookingsListScreen: React.FC = () => {
                 }
             }
 
-            // If we couldn't build any query, bail out
             if (queries.length === 0) {
                 setLoading(false);
                 return;
@@ -169,16 +237,15 @@ const MyBookingsListScreen: React.FC = () => {
             // We'll merge results from all snapshots into a map keyed by doc.id
             const docsMap = new Map<string, Booking>();
 
-            // subscribe to each query and keep unsubscribers
             queries.forEach((q) => {
                 const unsub = onSnapshot(
                     q,
                     (snap) => {
+                        // call async handler (fire-and-forget is OK here)
                         handleSnapshot(snap, docsMap);
                     },
                     (err) => {
                         console.warn('appointments onSnapshot error:', err);
-                        // if error, still set loading to false but don't blow up
                         setLoading(false);
                     }
                 );
@@ -193,7 +260,6 @@ const MyBookingsListScreen: React.FC = () => {
         };
     }, []);
 
-    // Filter bookings based on selected tab
     const filteredBookings = bookings.filter((booking) => {
         if (selectedTab === 'All') return true;
         return booking.status.toLowerCase() === selectedTab.toLowerCase();
@@ -202,7 +268,7 @@ const MyBookingsListScreen: React.FC = () => {
     return (
         <View style={styles.container}>
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => router.push('/home')}>
+                <TouchableOpacity onPress={() => router.push('/user/home')}>
                     <Ionicons name="arrow-back" size={24} color="#fff" />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>My Bookings</Text>
@@ -210,7 +276,7 @@ const MyBookingsListScreen: React.FC = () => {
             </View>
 
             <View style={styles.tabs}>
-                {['All', 'Pending', 'Ongoing'].map((tab) => (
+                {['All', 'Pending', 'Ongoing', 'Completed'].map((tab) => (
                     <TouchableOpacity
                         key={tab}
                         style={[styles.tab, (selectedTab === tab) && styles.tabActive]}
@@ -231,9 +297,22 @@ const MyBookingsListScreen: React.FC = () => {
                     </View>
                 ) : filteredBookings.length > 0 ? (
                     filteredBookings.map((b) => (
-                        <View key={b.id} style={styles.card}>
+                        // Make entire card pressable to view details
+                        <TouchableOpacity
+                            key={b.id}
+                            style={styles.card}
+                            onPress={() => router.push({ pathname: '/user/booking_details', params: { id: b.id } })}
+                        >
                             <View style={styles.leftSection}>
-                                <Ionicons name="person-circle-outline" size={50} color="#b58dde" />
+                                {b.picture ? (
+                                    // picture may already be a data URI like data:image/..., or wrapped in url(...) — we cleaned it earlier
+                                    <Image
+                                        source={{ uri: b.picture }}
+                                        style={{ width: 50, height: 50, borderRadius: 25, backgroundColor: '#EDE4F7' }}
+                                    />
+                                ) : (
+                                    <Ionicons name="person-circle-outline" size={50} color="#b58dde" />
+                                )}
                             </View>
 
                             <View style={styles.middleSection}>
@@ -256,6 +335,7 @@ const MyBookingsListScreen: React.FC = () => {
                                             b.status === 'Pending' && styles.statusPending,
                                             b.status === 'Ongoing' && styles.statusOngoing,
                                             b.status === 'Completed' && styles.statusCompleted,
+                                            b.status === 'Cancelled' && { backgroundColor: '#f8d7da' },
                                         ]}
                                     >
                                         <Text
@@ -264,13 +344,14 @@ const MyBookingsListScreen: React.FC = () => {
                                                 b.status === 'Pending' && styles.statusTextPending,
                                                 b.status === 'Ongoing' && styles.statusTextOngoing,
                                                 b.status === 'Completed' && styles.statusTextCompleted,
+                                                b.status === 'Cancelled' && { color: '#721c24' },
                                             ]}
                                         >
                                             {b.status}
                                         </Text>
                                     </View>
 
-                                    <TouchableOpacity
+                                    <Pressable
                                         style={styles.messageBtn}
                                         onPress={() => {
                                             if (b.providerId) {
@@ -279,10 +360,11 @@ const MyBookingsListScreen: React.FC = () => {
                                                 router.push('/message');
                                             }
                                         }}
+                                        onPressIn={(e) => e.stopPropagation()} // prevent parent card press
                                     >
                                         <Ionicons name="chatbubble-outline" size={14} color="#fff" />
                                         <Text style={styles.messageText}>Message now</Text>
-                                    </TouchableOpacity>
+                                    </Pressable>
                                 </View>
                             </View>
 
@@ -295,7 +377,7 @@ const MyBookingsListScreen: React.FC = () => {
                                 <Text style={styles.price}>₱{b.price}</Text>
                                 <Text style={styles.perHour}>per hour</Text>
                             </View>
-                        </View>
+                        </TouchableOpacity>
                     ))
                 ) : (
                     <View style={styles.emptyState}>
@@ -311,19 +393,19 @@ const MyBookingsListScreen: React.FC = () => {
             </ScrollView>
 
             <View style={styles.bottomNav}>
-                <TouchableOpacity onPress={() => router.push('/home')}>
+                <TouchableOpacity onPress={() => router.push('/user/home')}>
                     <Ionicons name="home-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => router.push('/bookinglists')}>
+                <TouchableOpacity onPress={() => router.push('/user/bookinglists')}>
                     <Ionicons name="calendar-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => router.push('/search')}>
+                <TouchableOpacity onPress={() => router.push('/user/search')}>
                     <Ionicons name="search-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => router.push('/message')}>
                     <Ionicons name="chatbubble-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => router.push('/account')}>
+                <TouchableOpacity onPress={() => router.push('/user/account')}>
                     <Ionicons name="person-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
             </View>
@@ -433,7 +515,6 @@ const styles = StyleSheet.create({
         marginLeft: 4,
     },
 
-    // Empty state styles
     emptyState: {
         alignItems: 'center',
         justifyContent: 'center',

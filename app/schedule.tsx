@@ -10,7 +10,7 @@ const MyBookingsScreen: React.FC = () => {
         <View style={styles.container}>
             {/* TOP LAYER */}
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => router.push("/home")}>
+                <TouchableOpacity onPress={() => router.push("/user/home")}>
                     <Ionicons name="arrow-back" size={24} color="#fff" />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>My Bookings</Text>
@@ -27,22 +27,22 @@ const MyBookingsScreen: React.FC = () => {
                 <Text style={styles.mainText}>are live here!</Text>
                 <Text style={styles.subText}>This page shows all of your bookings.</Text>
 
-                <TouchableOpacity onPress={() => router.push("/search")} style={styles.createButton}>
+                <TouchableOpacity onPress={() => router.push("/user/search")} style={styles.createButton}>
                     <Text style={styles.createButtonText}>Create Request</Text>
                 </TouchableOpacity>
             </View>
 
             {/* BOTTOM NAVIGATION */}
             <View style={styles.bottomNav}>
-                <TouchableOpacity onPress={() => router.push("/home")}>
+                <TouchableOpacity onPress={() => router.push("/user/home")}>
                     <Ionicons name="home-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
 
-                <TouchableOpacity onPress={() => router.push("/bookinglists")}>
+                <TouchableOpacity onPress={() => router.push("/user/bookinglists")}>
                     <Ionicons name="calendar-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
 
-                <TouchableOpacity onPress={() => router.push("/search")}>
+                <TouchableOpacity onPress={() => router.push("/user/search")}>
                     <Ionicons name="search-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
 
@@ -50,7 +50,7 @@ const MyBookingsScreen: React.FC = () => {
                     <Ionicons name="chatbubble-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
 
-                <TouchableOpacity onPress={() => router.push("/search")}>
+                <TouchableOpacity onPress={() => router.push("/user/search")}>
                     <Ionicons name="person-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
             </View>

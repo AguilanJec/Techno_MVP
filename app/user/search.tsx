@@ -13,7 +13,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { db } from "../firebaseConfig";
+import { db } from "../../firebaseConfig";
 import { collection, getDocs, query, where } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 
@@ -286,7 +286,7 @@ export default function SearchScreen() {
             <TouchableOpacity
                 style={styles.card}
                 onPress={() =>
-                    router.push({ pathname: "/details", params: { id: item.id } })
+                    router.push({ pathname: "/user/details", params: { id: item.id } })
                 }
             >
                 <View style={styles.cardContent}>
@@ -530,19 +530,19 @@ export default function SearchScreen() {
 
             {/* Bottom Nav (unchanged) */}
             <View style={styles.bottomNav}>
-                <TouchableOpacity onPress={() => router.push("/home")}>
+                <TouchableOpacity onPress={() => router.push("/user/home")}>
                     <Ionicons name="home-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => router.push("/bookinglists")}>
+                <TouchableOpacity onPress={() => router.push("/user/bookinglists")}>
                     <Ionicons name="calendar-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => router.push("/search")}>
+                <TouchableOpacity onPress={() => router.push("/user/search")}>
                     <Ionicons name="search-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => router.push("/message")}>
                     <Ionicons name="chatbubble-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => router.push("/account")}>
+                <TouchableOpacity onPress={() => router.push("/user/account")}>
                     <Ionicons name="person-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
             </View>
