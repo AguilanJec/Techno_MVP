@@ -1,10 +1,34 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import { doc, getDoc } from "firebase/firestore";
+import { auth, db } from "../firebaseConfig";
+import { onAuthStateChanged } from "firebase/auth";
 
 export default function AccountScreen() {
     const router = useRouter();
+    const [userData, setUserData] = useState<any>(null);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        const unsubscribe = onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                // Fetch user data from Firestore
+                try {
+                    const userDoc = await getDoc(doc(db, "users", user.uid));
+                    if (userDoc.exists()) {
+                        setUserData(userDoc.data());
+                    }
+                } catch (error) {
+                    console.error("Error fetching user data:", error);
+                }
+            }
+            setLoading(false);
+        });
+
+        return () => unsubscribe();
+    }, []);
 
     return (
         <View style={styles.container}>
@@ -23,7 +47,12 @@ export default function AccountScreen() {
                     <View style={styles.profileContainer}>
                         <Ionicons name="person-circle-outline" size={70} color="#b58dde" />
                         <View>
-                            <Text style={styles.profileName}>Tony Stark</Text>
+                            <Text style={styles.profileName}>
+                                {loading ? "Loading..." : (userData?.name || "Tony Stark")}
+                            </Text>
+                            <Text style={styles.profileEmail}>
+                                {userData?.email || ""}
+                            </Text>
                             <TouchableOpacity style={styles.profileButton} onPress={() => router.push("/profile")}>
                                 <Text style={styles.profileButtonText}>View full profile</Text>
                             </TouchableOpacity>
@@ -44,9 +73,16 @@ export default function AccountScreen() {
                     </TouchableOpacity>
                     <TouchableOpacity style={styles.item} onPress={() => router.push({
                         pathname: "/authentication/edit_address",
-                        params: { origin: "account" } // Pass the origin
+                        params: { origin: "account" }
                     })}>
-                        <Text style={styles.itemText}>My location</Text>
+                        <View style={styles.locationItem}>
+                            <Text style={styles.itemText}>My location</Text>
+                            {userData?.address && (
+                                <Text style={styles.locationAddress} numberOfLines={1}>
+                                    {userData.address}
+                                </Text>
+                            )}
+                        </View>
                         <Ionicons name="chevron-forward" size={18} color="#777" />
                     </TouchableOpacity>
                 </View>
@@ -91,7 +127,7 @@ export default function AccountScreen() {
                 </View>
             </ScrollView>
 
-            {/* ✅ BOTTOM NAVIGATION BAR */}
+            {/* BOTTOM NAVIGATION BAR */}
             <View style={styles.bottomNav}>
                 <TouchableOpacity onPress={() => router.push("/home")}>
                     <Ionicons name="home-outline" size={24} color="#8e44ad" />
@@ -135,6 +171,7 @@ const styles = StyleSheet.create({
     sectionTitle: { fontWeight: "700", fontSize: 16, marginBottom: 10, color: "#333" },
     profileContainer: { flexDirection: "row", alignItems: "center" },
     profileName: { fontSize: 18, fontWeight: "600", color: "#333" },
+    profileEmail: { fontSize: 14, color: "#777", marginTop: 2 },
     profileButton: {
         backgroundColor: "#b58dde",
         paddingHorizontal: 20,
@@ -150,6 +187,14 @@ const styles = StyleSheet.create({
         paddingVertical: 12,
         borderBottomWidth: 1,
         borderBottomColor: "#eee",
+    },
+    locationItem: {
+        flex: 1,
+    },
+    locationAddress: {
+        fontSize: 12,
+        color: "#777",
+        marginTop: 4,
     },
     itemRow: {
         flexDirection: "row",
