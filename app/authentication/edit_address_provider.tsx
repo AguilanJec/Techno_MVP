@@ -8,6 +8,7 @@ import {
     StyleSheet,
     ScrollView,
     Alert,
+    Image,
     Platform,
 } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
@@ -15,6 +16,9 @@ import { createUserWithEmailAndPassword, fetchSignInMethodsForEmail } from "fire
 import { doc, setDoc } from "firebase/firestore";
 import { auth, db } from "../../firebaseConfig";
 import * as Location from "expo-location";
+import * as ImagePicker from "expo-image-picker";
+import * as ImageManipulator from "expo-image-manipulator";
+
 
 // Define the type for a single day's availability
 type DayAvailability = {
@@ -44,6 +48,8 @@ export default function EditAddressProvider() {
     const locationParam = getParamString(params.userLocation ?? params.address ?? params.location);
     const latParam = getParamString(params.latitude);
     const lngParam = getParamString(params.longitude);
+    const [profilePhoto, setProfilePhoto] = useState<string | null>(null);
+
 
     // Form fields
     const [name, setName] = useState("");
@@ -192,6 +198,7 @@ export default function EditAddressProvider() {
                 rate: userRate,
                 role: roleParam,
                 bio: bio,
+                picture: profilePhoto || null,
                 availability, // <-- Save the availability
                 createdAt: new Date(),
             });
@@ -259,6 +266,46 @@ export default function EditAddressProvider() {
             </View>
         );
     }
+
+
+    const pickProfilePhoto = async () => {
+        try {
+            // Request permissions
+            const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+            if (!permission.granted) {
+                Alert.alert("Permission required", "We need access to your photos.");
+                return;
+            }
+
+            // Pick image
+            const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                allowsEditing: true,
+                quality: 1,
+            });
+
+            if (result.canceled) return;
+
+            const picked = result.assets[0];
+
+            // Resize image to 256x256
+            const manipulated = await ImageManipulator.manipulateAsync(
+                picked.uri,
+                [{ resize: { width: 256, height: 256 } }],
+                {
+                    compress: 0.7,     // reduce size
+                    format: ImageManipulator.SaveFormat.JPEG,
+                    base64: true,
+                }
+            );
+
+            const base64Img = `data:image/jpeg;base64,${manipulated.base64}`;
+            setProfilePhoto(base64Img);
+
+        } catch (err) {
+            console.log("Image picker error:", err);
+        }
+    };
 
     return (
         <ScrollView style={{ flex: 1, backgroundColor: "#EDE0FF" }}>
@@ -384,6 +431,20 @@ export default function EditAddressProvider() {
                 onChangeText={setUserRate}
             />
 
+            <Text style={styles.label}>Profile Picture *</Text>
+
+            <TouchableOpacity style={styles.photoPicker} onPress={pickProfilePhoto}>
+                {profilePhoto ? (
+                    <Image
+                        source={{ uri: profilePhoto }}
+                        style={styles.profileImage}
+                    />
+                ) : (
+                    <Text style={styles.photoPlaceholder}>Tap to upload photo</Text>
+                )}
+            </TouchableOpacity>
+
+
             {/* Skills Section */}
             <Text style={styles.label}>Skills</Text>
             {skills.map((s, index) => (
@@ -508,5 +569,27 @@ const styles = StyleSheet.create({
         marginHorizontal: 5,
         fontSize: 16,
         fontWeight: "600",
+    },
+
+    photoPicker: {
+        marginHorizontal: 20,
+        backgroundColor: "#F5F5F5",
+        height: 180,
+        borderRadius: 15,
+        justifyContent: "center",
+        alignItems: "center",
+        marginTop: 10,
+        overflow: "hidden",
+    },
+
+    photoPlaceholder: {
+        color: "#666",
+        fontSize: 15,
+    },
+
+    profileImage: {
+        width: "100%",
+        height: "100%",
+        resizeMode: "cover",
     },
 });

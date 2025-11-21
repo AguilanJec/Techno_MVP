@@ -8,6 +8,7 @@ import {
     StyleSheet,
     ScrollView,
     Alert,
+    Image,
     Platform,
 } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
@@ -15,6 +16,8 @@ import { createUserWithEmailAndPassword, fetchSignInMethodsForEmail } from "fire
 import { doc, setDoc } from "firebase/firestore";
 import { auth, db } from "../../firebaseConfig";
 import * as Location from "expo-location";
+import * as ImagePicker from "expo-image-picker";
+
 
 export default function EditAddress() {
     const router = useRouter();
@@ -27,6 +30,7 @@ export default function EditAddress() {
     const locationParam = getParamString(params.userLocation ?? params.address ?? params.location);
     const latParam = getParamString(params.latitude);
     const lngParam = getParamString(params.longitude);
+    const [profilePhoto, setProfilePhoto] = useState<string | null>(null);
 
     // Form fields
     const [name, setName] = useState("");
@@ -145,6 +149,7 @@ export default function EditAddress() {
                 address: addressDisplay,
                 addressDetails,
                 latitude: mapCoords.latitude,
+                picture: profilePhoto || null,
                 longitude: mapCoords.longitude,
                 createdAt: new Date(),
             });
@@ -165,6 +170,33 @@ export default function EditAddress() {
             </View>
         );
     }
+
+
+    const pickProfilePhoto = async () => {
+        try {
+            const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+            if (!permission.granted) {
+                Alert.alert("Permission required", "We need access to your photos.");
+                return;
+            }
+
+            const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                base64: true,
+                allowsEditing: true,
+                quality: 0.8,
+            });
+
+            if (!result.canceled) {
+                const base64Img = `data:image/jpeg;base64,${result.assets[0].base64}`;
+                setProfilePhoto(base64Img);
+            }
+        } catch (err) {
+            console.log("Image picker error:", err);
+        }
+    };
+
+
 
     return (
         <ScrollView style={{ flex: 1, backgroundColor: "#EDE0FF" }}>
@@ -256,6 +288,20 @@ export default function EditAddress() {
                 )}
             </View>
 
+            <Text style={styles.label}>Profile Picture *</Text>
+
+            <TouchableOpacity style={styles.photoPicker} onPress={pickProfilePhoto}>
+                {profilePhoto ? (
+                    <Image
+                        source={{ uri: profilePhoto }}
+                        style={styles.profileImage}
+                    />
+                ) : (
+                    <Text style={styles.photoPlaceholder}>Tap to upload photo</Text>
+                )}
+            </TouchableOpacity>
+
+
             <Text style={styles.label}>Address details</Text>
             <TextInput style={styles.input} placeholder="Near 7/11" value={addressDetails} onChangeText={setAddressDetails} />
 
@@ -297,4 +343,25 @@ const styles = StyleSheet.create({
     privacy: { marginTop: 15, textAlign: "center", fontSize: 12, color: "#555", paddingHorizontal: 20 },
     saveButton: { backgroundColor: "#C39BFF", margin: 20, paddingVertical: 12, borderRadius: 25, alignItems: "center" },
     saveText: { fontSize: 18, fontWeight: "700", color: "#fff" },
+    photoPicker: {
+        marginHorizontal: 20,
+        backgroundColor: "#F5F5F5",
+        height: 180,
+        borderRadius: 15,
+        justifyContent: "center",
+        alignItems: "center",
+        marginTop: 10,
+        overflow: "hidden",
+    },
+
+    photoPlaceholder: {
+        color: "#666",
+        fontSize: 15,
+    },
+
+    profileImage: {
+        width: "100%",
+        height: "100%",
+        resizeMode: "cover",
+    },
 });
