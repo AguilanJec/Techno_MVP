@@ -159,6 +159,7 @@ const styles = StyleSheet.create({
         borderRadius: 10,
         alignItems: "center",
         marginHorizontal: 5,
+        marginBottom: 50,
     },
     decline: {
         backgroundColor: "#E0D4F7",

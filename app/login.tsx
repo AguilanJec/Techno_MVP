@@ -68,16 +68,31 @@ export default function LoginScreen() {
         }
 
         try {
+            console.log(email, password);
             await signInWithEmailAndPassword(auth, email, password);
 
             // After successful login, fetch user data to determine role
             const user = auth.currentUser;
             if (user) {
-                const userDoc = await getDoc(doc(db, "users", user.uid)); // Use imported getDoc, doc, and db
-                if (userDoc.exists()) {
-                    const userData = userDoc.data();
-                    const userRole = userData.role; // Assuming you saved the role in Firestore
+                let userData = null;
+                let userRole = null;
 
+                // First, try to get data from the 'users' collection (for parents)
+                const userDoc = await getDoc(doc(db, "users", user.uid));
+                if (userDoc.exists()) {
+                    userData = userDoc.data();
+                    userRole = userData.role;
+                } else {
+                    // If not found in 'users', try 'providers' collection (for babysitters/tutors)
+                    const providerDoc = await getDoc(doc(db, "providers", user.uid));
+                    if (providerDoc.exists()) {
+                        userData = providerDoc.data();
+                        userRole = userData.role; // Role should be saved here in edit_address_provider
+                    }
+                }
+
+                if (userData) {
+                    // Check the role from either collection
                     if (userRole === "babysitting" || userRole === "tutoring") {
                         router.push("/service_home"); // Navigate service providers to their home
                     } else {
@@ -85,7 +100,7 @@ export default function LoginScreen() {
                         router.push("/home");
                     }
                 } else {
-                    // Handle case where user doc doesn't exist
+                    // Handle case where user doc doesn't exist in either collection
                     Alert.alert("Error", "User data not found. Please contact support.");
                 }
             } else {
