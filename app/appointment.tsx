@@ -17,6 +17,7 @@ import { useRouter, useLocalSearchParams } from "expo-router";
 import { getAuth } from "firebase/auth";
 import { db } from "../firebaseConfig";
 import { doc, getDoc, addDoc, collection, serverTimestamp } from "firebase/firestore";
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 type Provider = {
     id: string;
@@ -68,6 +69,7 @@ export default function AppointmentScreen() {
 
     // one-time
     const [selectedDate, setSelectedDate] = useState<string | null>(null); // ISO yyyy-mm-dd string
+    const [showDatePicker, setShowDatePicker] = useState(false);
 
     // schedule (recurring)
     const [selectedDays, setSelectedDays] = useState<string[]>([]); // keys like 'mon','thu'...
@@ -150,6 +152,28 @@ export default function AppointmentScreen() {
         setSelectedDays((prev) => (prev.includes(key) ? prev.filter((p) => p !== key) : [...prev, key]));
     };
 
+    const onDateChange = (event: any, selectedDate?: Date) => {
+        setShowDatePicker(false);
+
+        if (event.type === 'set' && selectedDate) {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            // Check if selected date is not in the past
+            if (selectedDate < today) {
+                Alert.alert(
+                    "Invalid Date",
+                    "Please select a date that is not in the past. Appointments cannot be scheduled for previous dates.",
+                    [{ text: "OK" }]
+                );
+                return;
+            }
+
+            const iso = `${selectedDate.getFullYear()}-${pad(selectedDate.getMonth() + 1)}-${pad(selectedDate.getDate())}`;
+            setSelectedDate(iso);
+        }
+    };
+
     // calculate duration in hours. If end <= start we assume next-day end (rare for your use case)
     const durationHours = useMemo(() => {
         const startDec = toDecimalHour(startHour, startMinute, startAmpm);
@@ -191,6 +215,23 @@ export default function AppointmentScreen() {
             Alert.alert("Choose a date", "Please choose a date for the one-time appointment.");
             return;
         }
+
+        // Validate date is not in the past for one-time appointments
+        if (type === "one_time" && selectedDate) {
+            const selected = new Date(selectedDate);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            if (selected < today) {
+                Alert.alert(
+                    "Invalid Date",
+                    "Please select a date that is not in the past. Appointments cannot be scheduled for previous dates.",
+                    [{ text: "OK" }]
+                );
+                return;
+            }
+        }
+
         if (type === "schedule" && selectedDays.length === 0) {
             Alert.alert("Choose days", "Select at least one weekday for a scheduled appointment.");
             return;
@@ -406,19 +447,29 @@ export default function AppointmentScreen() {
                         <Text style={styles.sectionTitleSmall}>Choose date</Text>
                         <TouchableOpacity
                             style={styles.datePicker}
-                            onPress={() => {
-                                // simple increment cycle for demo: open native date-picker could be added.
-                                // But we'll simply prompt to pick: for now rotate date by +1 day to that example or consider using a date-picker library.
-                                Alert.alert(
-                                    "Date selection",
-                                    "If you want a native date picker integrate react-native-datetimepicker or another library. For demo this toggles days.",
-                                    [{ text: "OK" }]
-                                );
-                            }}
+                            onPress={() => setShowDatePicker(true)}
                         >
-                            <Text style={styles.dateText}>{selectedDate}</Text>
+                            <Text style={styles.dateText}>
+                                {selectedDate ? new Date(selectedDate).toLocaleDateString('en-US', {
+                                    weekday: 'short',
+                                    year: 'numeric',
+                                    month: 'short',
+                                    day: 'numeric'
+                                }) : 'Select date'}
+                            </Text>
+                            <Ionicons name="calendar-outline" size={20} color="#b58dde" style={{ marginLeft: 8 }} />
                         </TouchableOpacity>
-                        <Text style={styles.smallNote}>Tap date to open OS date picker (integrate DateTimePicker for production)</Text>
+                        <Text style={styles.smallNote}>Tap to open calendar and select a date</Text>
+
+                        {showDatePicker && (
+                            <DateTimePicker
+                                value={selectedDate ? new Date(selectedDate) : new Date()}
+                                mode="date"
+                                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                                onChange={onDateChange}
+                                minimumDate={new Date()} // Prevent selecting past dates
+                            />
+                        )}
                     </View>
                 )}
 
@@ -566,6 +617,9 @@ const styles = StyleSheet.create({
         marginTop: 8,
         borderWidth: 1,
         borderColor: "#F0E7FB",
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
     },
     dateText: { fontSize: 16, color: "#333" },
 

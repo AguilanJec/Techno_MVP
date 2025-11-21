@@ -42,7 +42,7 @@ export default function MessageScreen() {
     const [searchQuery, setSearchQuery] = useState("");
     const [modalVisible, setModalVisible] = useState(false);
     const [conversations, setConversations] = useState<Conversation[]>([]);
-    const [providers, setProviders] = useState<Provider[]>([]);
+    const [availableProviders, setAvailableProviders] = useState<Provider[]>([]);
     const [currentUser, setCurrentUser] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [contactsLoading, setContactsLoading] = useState(false);
@@ -53,50 +53,18 @@ export default function MessageScreen() {
 
         if (user) {
             setCurrentUser(user);
-            fetchProviders();
             setupConversationsListener(user.uid);
         } else {
             setLoading(false);
         }
     }, []);
 
-    const fetchProviders = async () => {
-        try {
-            setContactsLoading(true);
-            const providersQuery = query(collection(db, "providers"));
-            const querySnapshot = await getDocs(providersQuery);
-            const providersData: Provider[] = [];
-
-            querySnapshot.forEach((doc) => {
-                const providerData = doc.data();
-                if (providerData.name) {
-                    providersData.push({
-                        id: doc.id,
-                        name: providerData.name,
-                        bio: providerData.bio,
-                        distance: providerData.distance,
-                        rate: providerData.rate,
-                        rating: providerData.rating,
-                        type: providerData.type,
-                        skills: providerData.skills
-                    } as Provider);
-                }
-            });
-
-            setProviders(providersData);
-            setContactsLoading(false);
-        } catch (error) {
-            console.error("Error fetching providers:", error);
-            setContactsLoading(false);
-        }
-    };
-
     const setupConversationsListener = (currentUserId: string) => {
         try {
+            // Get conversations without ordering to avoid index issues
             const conversationsQuery = query(
                 collection(db, "conversations"),
-                where("participants", "array-contains", currentUserId),
-                orderBy("lastMessageTime", "desc")
+                where("participants", "array-contains", currentUserId)
             );
 
             const unsubscribe = onSnapshot(conversationsQuery,
@@ -116,6 +84,17 @@ export default function MessageScreen() {
                         } as Conversation);
                     });
 
+                    // Sort conversations locally by lastMessageTime in descending order
+                    conversationsData.sort((a, b) => {
+                        try {
+                            const timeA = a.lastMessageTime?.toDate?.() || new Date(0);
+                            const timeB = b.lastMessageTime?.toDate?.() || new Date(0);
+                            return timeB.getTime() - timeA.getTime();
+                        } catch (error) {
+                            return 0;
+                        }
+                    });
+
                     setConversations(conversationsData);
                     setLoading(false);
                 },
@@ -132,29 +111,87 @@ export default function MessageScreen() {
         }
     };
 
+    const fetchAvailableProviders = async () => {
+        if (!currentUser) return;
+
+        try {
+            setContactsLoading(true);
+
+            // Get all providers that the user has conversations with
+            const providerIds: string[] = [];
+            const providerNames: string[] = [];
+
+            // Extract provider IDs and names from existing conversations
+            conversations.forEach(conversation => {
+                const otherParticipantIndex = conversation.participants.findIndex(id => id !== currentUser.uid);
+                if (otherParticipantIndex !== -1) {
+                    const providerId = conversation.participants[otherParticipantIndex];
+                    const providerName = conversation.participantNames[otherParticipantIndex];
+
+                    if (!providerIds.includes(providerId)) {
+                        providerIds.push(providerId);
+                        providerNames.push(providerName);
+                    }
+                }
+            });
+
+            // Fetch provider details from Firestore
+            const providersData: Provider[] = [];
+
+            if (providerIds.length > 0) {
+                const batchSize = 10;
+                const batches = [];
+
+                for (let i = 0; i < providerIds.length; i += batchSize) {
+                    const batch = providerIds.slice(i, i + batchSize);
+                    const providersQuery = query(
+                        collection(db, "providers"),
+                        where("__name__", "in", batch)
+                    );
+                    batches.push(getDocs(providersQuery));
+                }
+
+                const allSnapshots = await Promise.all(batches);
+
+                allSnapshots.forEach((snapshot) => {
+                    snapshot.forEach((doc) => {
+                        const providerData = doc.data();
+                        if (providerData.name) {
+                            providersData.push({
+                                id: doc.id,
+                                name: providerData.name,
+                                bio: providerData.bio,
+                                distance: providerData.distance,
+                                rate: providerData.rate,
+                                rating: providerData.rating,
+                                type: providerData.type,
+                                skills: providerData.skills
+                            } as Provider);
+                        }
+                    });
+                });
+            }
+
+            setAvailableProviders(providersData);
+            setContactsLoading(false);
+        } catch (error) {
+            console.error("Error fetching available providers:", error);
+            setContactsLoading(false);
+        }
+    };
+
     const startConversation = async (providerId: string, providerName: string) => {
         if (!currentUser) return;
 
         try {
-            const existingConvQuery = query(
-                collection(db, "conversations"),
-                where("participants", "array-contains", currentUser.uid)
+            // Check for existing conversation
+            const existingConv = conversations.find(conversation =>
+                conversation.participants.includes(currentUser.uid) &&
+                conversation.participants.includes(providerId)
             );
 
-            const querySnapshot = await getDocs(existingConvQuery);
-            let existingConversation: Conversation | null = null;
-
-            querySnapshot.forEach((doc) => {
-                const conversation = doc.data() as Conversation;
-                if (conversation.participants.includes(providerId)) {
-                    // @ts-ignore
-                    existingConversation = { id: doc.id, ...conversation };
-                }
-            });
-
-            if (existingConversation) {
-                // @ts-ignore
-                router.push(`/chat?conversationId=${existingConversation.id}&providerName=${encodeURIComponent(providerName)}&providerId=${providerId}`);
+            if (existingConv) {
+                router.push(`/chat?conversationId=${existingConv.id}&providerName=${encodeURIComponent(providerName)}&providerId=${providerId}`);
             } else {
                 const newConversation = {
                     participants: [currentUser.uid, providerId],
@@ -187,7 +224,7 @@ export default function MessageScreen() {
             conversation.lastMessage.toLowerCase().includes(searchQuery.toLowerCase());
     });
 
-    const filteredProviders = providers.filter(provider =>
+    const filteredProviders = availableProviders.filter(provider =>
         provider.name.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
@@ -316,6 +353,7 @@ export default function MessageScreen() {
                 style={styles.writeButton}
                 onPress={() => {
                     setSearchQuery("");
+                    fetchAvailableProviders();
                     setModalVisible(true);
                 }}
             >
@@ -357,7 +395,7 @@ export default function MessageScreen() {
 
                         <TextInput
                             style={styles.modalSearchInput}
-                            placeholder="Search tutors..."
+                            placeholder="Search providers..."
                             placeholderTextColor="#999"
                             value={searchQuery}
                             onChangeText={setSearchQuery}
@@ -367,7 +405,7 @@ export default function MessageScreen() {
                         {contactsLoading ? (
                             <View style={styles.loadingContainer}>
                                 <ActivityIndicator size="small" color="#8e44ad" />
-                                <Text>Loading tutors...</Text>
+                                <Text>Loading providers...</Text>
                             </View>
                         ) : (
                             <FlatList
@@ -378,7 +416,7 @@ export default function MessageScreen() {
                                 ListEmptyComponent={
                                     <View style={styles.emptyState}>
                                         <Text style={styles.emptyStateText}>
-                                            {searchQuery ? "No tutors found" : "No tutors available"}
+                                            {searchQuery ? "No providers found" : "No providers available"}
                                         </Text>
                                     </View>
                                 }

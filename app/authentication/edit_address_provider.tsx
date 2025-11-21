@@ -1,4 +1,4 @@
-// app/edit_address.tsx
+// app/edit_address_provider.tsx
 import React, { useEffect, useState } from "react";
 import {
     View,
@@ -16,7 +16,25 @@ import { doc, setDoc } from "firebase/firestore";
 import { auth, db } from "../../firebaseConfig";
 import * as Location from "expo-location";
 
-export default function EditAddress() {
+// Define the type for a single day's availability
+type DayAvailability = {
+    enabled: boolean;
+    from: string; // Format: "HH:MM"
+    to: string;   // Format: "HH:MM"
+};
+
+// Define the type for the entire availability state object
+type AvailabilityState = {
+    Monday: DayAvailability;
+    Tuesday: DayAvailability;
+    Wednesday: DayAvailability;
+    Thursday: DayAvailability;
+    Friday: DayAvailability;
+    Saturday: DayAvailability;
+    Sunday: DayAvailability;
+};
+
+export default function EditAddressProvider() {
     const router = useRouter();
     const params = useLocalSearchParams();
 
@@ -40,6 +58,17 @@ export default function EditAddress() {
 
     // User rate (₱/hr)
     const [userRate, setUserRate] = useState("");
+
+    // Availability state with proper type
+    const [availability, setAvailability] = useState<AvailabilityState>({
+        Monday: { enabled: false, from: "08:00", to: "20:00" },
+        Tuesday: { enabled: false, from: "08:00", to: "20:00" },
+        Wednesday: { enabled: false, from: "08:00", to: "20:00" },
+        Thursday: { enabled: false, from: "08:00", to: "20:00" },
+        Friday: { enabled: false, from: "08:00", to: "20:00" },
+        Saturday: { enabled: false, from: "08:00", to: "20:00" },
+        Sunday: { enabled: false, from: "08:00", to: "20:00" },
+    });
 
     const addSkill = () => {
         if (!newSkill.trim()) {
@@ -163,8 +192,8 @@ export default function EditAddress() {
                 rate: userRate,
                 role: roleParam,
                 bio: bio,
+                availability, // <-- Save the availability
                 createdAt: new Date(),
-
             });
 
             Alert.alert("Success", "Provider account created successfully!");
@@ -175,6 +204,53 @@ export default function EditAddress() {
         }
     };
 
+    // Component for each day's availability row - with proper types
+    const AvailabilityRow: React.FC<{
+        day: keyof AvailabilityState; // 'day' must be a key of AvailabilityState (e.g., "Monday", "Tuesday", etc.)
+        value: DayAvailability;       // 'value' is the specific day's availability object
+        onChange: (newVal: DayAvailability) => void; // 'onChange' function expects a DayAvailability object
+    }> = ({ day, value, onChange }) => {
+        const handleToggle = () => {
+            onChange({ ...value, enabled: !value.enabled });
+        };
+
+        const handleTimeChange = (type: 'from' | 'to', newValue: string) => { // 'type' is specifically 'from' or 'to'
+            // Basic validation for time format (HH:MM)
+            if (/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/.test(newValue) || newValue === "") {
+                onChange({ ...value, [type]: newValue });
+            }
+        };
+
+        return (
+            <View style={styles.availabilityRow}>
+                <Text style={styles.dayLabel}>{day}</Text>
+                <TouchableOpacity onPress={handleToggle} style={styles.toggleContainer}>
+                    <View style={[styles.toggle, value.enabled && styles.toggleActive]}>
+                        {value.enabled && <View style={styles.toggleHandle} />}
+                    </View>
+                </TouchableOpacity>
+                {value.enabled && (
+                    <View style={styles.timeInputs}>
+                        <TextInput
+                            style={styles.timeInput}
+                            value={value.from}
+                            onChangeText={(text) => handleTimeChange("from", text)}
+                            placeholder="08:00"
+                            keyboardType="numeric"
+                        />
+                        <Text style={styles.toLabel}>To</Text>
+                        <TextInput
+                            style={styles.timeInput}
+                            value={value.to}
+                            onChangeText={(text) => handleTimeChange("to", text)}
+                            placeholder="20:00"
+                            keyboardType="numeric"
+                        />
+                    </View>
+                )}
+            </View>
+        );
+    };
 
     if (loadingCoords) {
         return (
@@ -280,6 +356,21 @@ export default function EditAddress() {
                 onChangeText={setBio}
             />
 
+            {/* Availability Section */}
+            <Text style={styles.label}>Availability</Text>
+            {Object.keys(availability).map((dayKey) => {
+                // Type assertion to ensure dayKey is keyof AvailabilityState
+                const day = dayKey as keyof AvailabilityState;
+                return (
+                    <AvailabilityRow
+                        key={day}
+                        day={day}
+                        value={availability[day]} // TypeScript knows 'day' is valid key for 'availability'
+                        onChange={(newVal) => setAvailability(prev => ({ ...prev, [day]: newVal }))}
+                    />
+                );
+            })}
+
             <Text style={styles.label}>Address details</Text>
             <TextInput style={styles.input} placeholder="Near 7/11" value={addressDetails} onChangeText={setAddressDetails} />
 
@@ -361,4 +452,61 @@ const styles = StyleSheet.create({
     skillInputRow: { flexDirection: "row", marginHorizontal: 20, marginTop: 5 },
     addSkillButton: { backgroundColor: "#B388FF", marginHorizontal: 20, marginTop: 8, paddingVertical: 10, borderRadius: 10, alignItems: "center" },
     addSkillText: { color: "#fff", fontWeight: "700" },
+
+    // Availability styles
+    availabilityRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        marginHorizontal: 20,
+        marginTop: 10,
+        padding: 12,
+        backgroundColor: "#F5F5F5",
+        borderRadius: 10,
+    },
+    dayLabel: {
+        flex: 1,
+        fontSize: 16,
+    },
+    toggleContainer: {
+        marginRight: 10,
+    },
+    toggle: {
+        width: 40,
+        height: 20,
+        borderRadius: 10,
+        backgroundColor: "#ddd",
+        justifyContent: "center",
+        alignItems: "flex-start",
+    },
+    toggleActive: {
+        backgroundColor: "#B388FF",
+        alignItems: "flex-end",
+    },
+    toggleHandle: {
+        width: 16,
+        height: 16,
+        borderRadius: 8,
+        backgroundColor: "#fff",
+        margin: 2,
+    },
+    timeInputs: {
+        flexDirection: "row",
+        alignItems: "center",
+        flex: 1,
+        marginLeft: 10,
+    },
+    timeInput: {
+        flex: 1,
+        height: 40,
+        backgroundColor: "#fff",
+        borderRadius: 10,
+        paddingHorizontal: 10,
+        fontSize: 16,
+        textAlign: "center",
+    },
+    toLabel: {
+        marginHorizontal: 5,
+        fontSize: 16,
+        fontWeight: "600",
+    },
 });
