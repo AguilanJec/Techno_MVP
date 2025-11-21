@@ -7,7 +7,7 @@ import {
     TouchableOpacity,
     Image,
     StyleSheet,
-    Alert,
+    Alert, Platform,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useNavigation } from "@react-navigation/native";
@@ -33,10 +33,13 @@ export default function LoginScreen() {
 
     // --- GOOGLE SIGN-IN CONFIG ---
     // Make sure promptAsync is destructured here
-    const [request, response, promptAsync] = Google.useAuthRequest({
-        webClientId: "308001835959-7m2cefe3rpp9l1lj0m3v2veo0aeai1da.apps.googleusercontent.com",
-        androidClientId: "308001835959-1hpdmie9dfth2h7rvkdsuujetg13kfis.apps.googleusercontent.com",
-    });
+    const [request, response, promptAsync] =
+        Platform.OS === "ios"
+            ? [null, null, () => Alert.alert("Google login is not available on iOS yet.")]
+            : Google.useAuthRequest({
+                webClientId: "308001835959-7m2cefe3rpp9l1lj0m3v2veo0aeai1da.apps.googleusercontent.com",
+                androidClientId: "308001835959-1hpdmie9dfth2h7rvkdsuujetg13kfis.apps.googleusercontent.com",
+            });
 
     useEffect(() => {
         if (response?.type === "success") {
