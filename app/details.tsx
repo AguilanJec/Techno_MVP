@@ -6,11 +6,12 @@ import {
     StyleSheet,
     TouchableOpacity,
     ScrollView,
+    Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { db } from "../firebaseConfig";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, collection, query, where, getDocs, addDoc } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 
 interface ReviewRaw {
@@ -23,12 +24,13 @@ interface ReviewRaw {
 interface ReviewEnriched extends ReviewRaw {
     reviewerName?: string;
     formattedDate?: string;
+    reviewerPhoto?: string | null; // Allow null
 }
 
 interface Tutor {
     id: string;
     name: string;
-    distance?: string; // optional route param or computed
+    distance?: string;
     rate?: string;
     rating?: number;
     reviews?: ReviewRaw[] | number;
@@ -39,18 +41,24 @@ interface Tutor {
     latitude?: number;
     longitude?: number;
     role?: string;
+    type?: string;
+    photoURL?: string;
+    profilePicture?: string;
+    image?: string;
+    avatar?: string;
 }
 
 export default function Details() {
     const router = useRouter();
     const params = useLocalSearchParams();
-    const { id, distance: distanceParam } = params; // distance can be passed from search
+    const { id, distance: distanceParam } = params;
     const tutorId = Array.isArray(id) ? id[0] : id;
 
     const [tutor, setTutor] = useState<Tutor | null>(null);
     const [enrichedReviews, setEnrichedReviews] = useState<ReviewEnriched[]>([]);
     const [computedDistance, setComputedDistance] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
+    const [profilePhoto, setProfilePhoto] = useState<string | null>(null);
 
     const auth = getAuth();
 
@@ -69,36 +77,55 @@ export default function Details() {
                     return;
                 }
                 const data = snap.data() as any;
-                const t: Tutor = { id: snap.id, ...(data as Omit<Tutor, "id">) };
+                const t: Tutor = {
+                    id: snap.id,
+                    ...(data as Omit<Tutor, "id">)
+                };
                 setTutor(t);
 
-                // 1) Enrich reviews: fetch reviewer name for each review (if review array)
+                // Get profile photo from tutor data - check multiple possible field names
+                const photoUrl = data.photoURL || data.profilePicture || data.image || data.avatar || data.profileImage;
+                console.log("Profile photo URL:", photoUrl); // Debug log
+                if (photoUrl) {
+                    setProfilePhoto(photoUrl);
+                } else {
+                    console.log("No profile photo found for tutor:", tutorId);
+                    setProfilePhoto(null);
+                }
+
+                // 1) Enrich reviews: fetch reviewer name and photo for each review
                 if (Array.isArray(data.reviews) && data.reviews.length > 0) {
                     const reviewsRaw: ReviewRaw[] = data.reviews;
                     const enriched: ReviewEnriched[] = await Promise.all(
                         reviewsRaw.map(async (r) => {
                             const out: ReviewEnriched = { ...r };
-                            // get reviewer name from users collection (reviewer is uid)
+
+                            // get reviewer name and photo from users collection
                             try {
                                 if (r.reviewer) {
                                     const userSnap = await getDoc(doc(db, "users", r.reviewer));
                                     if (userSnap.exists()) {
                                         const u = userSnap.data() as any;
                                         out.reviewerName = u.name || "User";
+                                        // Check multiple possible photo field names
+                                        out.reviewerPhoto = u.photoURL || u.profilePicture || u.image || u.avatar || null;
                                     } else {
                                         out.reviewerName = "User";
+                                        out.reviewerPhoto = null;
                                     }
+                                } else {
+                                    out.reviewerName = "User";
+                                    out.reviewerPhoto = null;
                                 }
                             } catch (err) {
                                 console.warn("Failed to fetch reviewer:", err);
                                 out.reviewerName = "User";
+                                out.reviewerPhoto = null;
                             }
 
-                            // format date if Firestore Timestamp or ISO string
+                            // format date
                             if (r.date) {
                                 try {
-                                    // Firestore Timestamp has toDate()
-                                    // otherwise try to construct Date
                                     let d: Date;
                                     if (typeof (r.date as any).toDate === "function") {
                                         d = (r.date as any).toDate();
@@ -120,7 +147,7 @@ export default function Details() {
                         })
                     );
 
-                    // sort newest first (by date if available)
+                    // sort newest first
                     enriched.sort((a, b) => {
                         const aTime = a.date && typeof (a.date as any).toDate === "function" ? (a.date as any).toDate().getTime() : a.date ? new Date(a.date).getTime() : 0;
                         const bTime = b.date && typeof (b.date as any).toDate === "function" ? (b.date as any).toDate().getTime() : b.date ? new Date(b.date).getTime() : 0;
@@ -132,12 +159,11 @@ export default function Details() {
                     setEnrichedReviews([]);
                 }
 
-                // 2) Compute distance if route passed distance param, otherwise attempt to compute using logged-in user's coords
+                // 2) Compute distance
                 if (distanceParam) {
                     const dist = Array.isArray(distanceParam) ? distanceParam[0] : distanceParam;
                     setComputedDistance(dist as string);
                 } else {
-                    // try compute using logged-in user's coordinates from users doc
                     try {
                         const user = auth.currentUser;
                         if (user) {
@@ -146,15 +172,15 @@ export default function Details() {
                                 const u = userSnap.data() as any;
                                 if (typeof u.latitude === "number" && typeof u.longitude === "number" && typeof data.latitude === "number" && typeof data.longitude === "number") {
                                     const km = getDistanceFromLatLonInKm(u.latitude, u.longitude, data.latitude, data.longitude);
-                                    setComputedDistance(`${km.toFixed(2)} km`);
+                                    setComputedDistance(`${km.toFixed(1)} km away`);
                                 } else {
-                                    setComputedDistance(undefined as any);
+                                    setComputedDistance("Distance unavailable");
                                 }
                             }
                         }
                     } catch (err) {
                         console.warn("Failed to compute distance:", err);
-                        setComputedDistance(undefined as any);
+                        setComputedDistance("Distance unavailable");
                     }
                 }
             } catch (error) {
@@ -167,10 +193,57 @@ export default function Details() {
         fetchTutor();
     }, [tutorId, distanceParam]);
 
+    const startConversation = async () => {
+        if (!tutor || !auth.currentUser) return;
+
+        try {
+            const currentUser = auth.currentUser;
+
+            // Check if conversation already exists
+            const existingConvQuery = query(
+                collection(db, "conversations"),
+                where("participants", "array-contains", currentUser.uid)
+            );
+
+            const querySnapshot = await getDocs(existingConvQuery);
+            let existingConversation: any = null;
+
+            querySnapshot.forEach((doc) => {
+                const conversation = doc.data();
+                if (conversation.participants.includes(tutor.id)) {
+                    existingConversation = { id: doc.id, ...conversation };
+                }
+            });
+
+            if (existingConversation) {
+                router.push(`/chat?conversationId=${existingConversation.id}&providerName=${encodeURIComponent(tutor.name)}&providerId=${tutor.id}`);
+            } else {
+                const newConversation = {
+                    participants: [currentUser.uid, tutor.id],
+                    participantNames: [currentUser.displayName || "User", tutor.name],
+                    lastMessage: "Conversation started",
+                    lastMessageTime: new Date(),
+                    unread: false,
+                    lastMessageSender: currentUser.uid
+                };
+
+                const docRef = await addDoc(collection(db, "conversations"), newConversation);
+                router.push(`/chat?conversationId=${docRef.id}&providerName=${encodeURIComponent(tutor.name)}&providerId=${tutor.id}`);
+            }
+        } catch (error) {
+            console.error("Error starting conversation:", error);
+        }
+    };
+
+    // Function to get initials for avatar
+    const getInitials = (name: string) => {
+        return name.split(' ').map(n => n[0]).join('').toUpperCase();
+    };
+
     if (loading) return <Text style={styles.loading}>Loading tutor details...</Text>;
     if (!tutor) return <Text style={styles.loading}>Provider not found.</Text>;
 
-    // calculate review count & average rating
+    // Calculate review count & average rating
     const reviewCount = enrichedReviews.length > 0 ? enrichedReviews.length : (typeof tutor.reviews === "number" ? tutor.reviews : 0);
 
     const avgRating =
@@ -193,26 +266,65 @@ export default function Details() {
             </View>
 
             <ScrollView contentContainerStyle={styles.scrollContent}>
-                {/* Tutor Card */}
+                {/* Tutor Card - With Profile Picture */}
                 <View style={styles.card}>
-                    <Text style={styles.name}>{tutor.name}</Text>
+                    <View style={styles.profileHeader}>
+                        <View style={styles.avatarContainer}>
+                            {profilePhoto ? (
+                                <Image
+                                    source={{ uri: profilePhoto }}
+                                    style={styles.profileImage}
+                                    onError={(e) => {
+                                        console.log("Error loading profile image:", e.nativeEvent.error);
+                                        setProfilePhoto(null);
+                                    }}
+                                />
+                            ) : (
+                                <View style={styles.avatarPlaceholder}>
+                                    <Text style={styles.avatarText}>
+                                        {getInitials(tutor.name)}
+                                    </Text>
+                                </View>
+                            )}
+                        </View>
+                        <View style={styles.profileInfo}>
+                            <Text style={styles.name}>{tutor.name}</Text>
 
-                    <View style={{ flexDirection: "row", marginTop: 6, alignItems: "center" }}>
-                        <Ionicons name="location-outline" size={14} color="#777" />
-                        <Text style={styles.details}> {computedDistance ?? tutor.distance ?? "—"}</Text>
+                            <View style={styles.distanceContainer}>
+                                <Ionicons name="location-outline" size={14} color="#777" />
+                                <Text style={styles.distanceText}>
+                                    {computedDistance || tutor.distance || "Distance unavailable"}
+                                </Text>
+                            </View>
+
+                            <View style={styles.ratingContainer}>
+                                <View style={styles.ratingStars}>
+                                    <Ionicons name="star" size={14} color="#FFD700" />
+                                    <Text style={styles.ratingText}>{avgRating}</Text>
+                                </View>
+                                <Text style={styles.reviewCount}>| {reviewCount} reviews</Text>
+                            </View>
+
+                            {tutor.rate && (
+                                <Text style={styles.rate}>
+                                    {tutor.rate ? `₱${tutor.rate}/hour` : "—/hour"}
+                                </Text>
+                            )}
+                        </View>
                     </View>
 
-                    <View style={{ flexDirection: "row", marginTop: 6, alignItems: "center" }}>
-                        <Ionicons name="star" size={14} color="#FFD700" />
-                        <Text style={styles.details}> {avgRating} </Text>
-                        <Text style={[styles.details, { marginLeft: 8 }]}>({reviewCount} reviews)</Text>
-                    </View>
+                    <View style={styles.badgeAndMessageContainer}>
+                        <View style={styles.fullTimeBadge}>
+                            <Text style={styles.fullTimeText}>Full-time</Text>
+                        </View>
 
-                    {tutor.rate && (
-                        <Text style={styles.rate}>
-                            {tutor.rate ? `₱${tutor.rate}/hour` : "—/hour"}
-                        </Text>
-                    )}
+                        <TouchableOpacity
+                            style={styles.messageButton}
+                            onPress={startConversation}
+                        >
+                            <Text style={styles.messageButtonText}>Message now</Text>
+                        </TouchableOpacity>
+                    </View>
                 </View>
 
                 {/* About Section */}
@@ -228,8 +340,8 @@ export default function Details() {
                     <View style={styles.section}>
                         <Text style={styles.sectionTitle}>Skills</Text>
                         <View style={styles.skillsContainer}>
-                            {tutor.skills.map((skill) => (
-                                <View key={skill} style={styles.skillPill}>
+                            {tutor.skills.map((skill, index) => (
+                                <View key={index} style={styles.skillPill}>
                                     <Text style={styles.skillText}>{skill}</Text>
                                 </View>
                             ))}
@@ -242,21 +354,41 @@ export default function Details() {
                     <Text style={styles.sectionTitle}>Reviews</Text>
 
                     {enrichedReviews.length === 0 ? (
-                        <Text style={{ color: "#666" }}>No reviews yet.</Text>
+                        <Text style={styles.noReviews}>No reviews yet.</Text>
                     ) : (
                         enrichedReviews.map((r, i) => (
                             <View key={i} style={styles.reviewCard}>
                                 <View style={styles.reviewHeader}>
-                                    <Text style={styles.reviewerName}>{r.reviewerName ?? "User"}</Text>
+                                    <View style={styles.reviewerInfo}>
+                                        {r.reviewerPhoto ? (
+                                            <Image
+                                                source={{ uri: r.reviewerPhoto }}
+                                                style={styles.reviewerAvatar}
+                                                onError={() => {/* Handle error silently */}}
+                                            />
+                                        ) : (
+                                            <View style={styles.reviewerAvatarPlaceholder}>
+                                                <Text style={styles.reviewerAvatarText}>
+                                                    {getInitials(r.reviewerName || "User")}
+                                                </Text>
+                                            </View>
+                                        )}
+                                        <View style={styles.reviewerTextInfo}>
+                                            <Text style={styles.reviewerName}>{r.reviewerName ?? "User"}</Text>
+                                            {r.formattedDate && (
+                                                <Text style={styles.reviewDate}>{r.formattedDate}</Text>
+                                            )}
+                                        </View>
+                                    </View>
                                     <View style={styles.reviewMeta}>
                                         <Ionicons name="star" size={12} color="#FFD700" />
                                         <Text style={styles.reviewRatingText}>{r.rating ?? "-"}</Text>
                                     </View>
                                 </View>
 
-                                {r.formattedDate ? <Text style={styles.reviewDate}>{r.formattedDate}</Text> : null}
-
-                                {r.comment ? <Text style={styles.reviewComment}>{r.comment}</Text> : null}
+                                {r.comment && (
+                                    <Text style={styles.reviewComment}>{r.comment}</Text>
+                                )}
                             </View>
                         ))
                     )}
@@ -268,7 +400,7 @@ export default function Details() {
                     onPress={() =>
                         router.push({
                             pathname: "/appointment",
-                            params: {id: tutor?.id }   // pass clicked provider ID
+                            params: { id: tutor?.id }
                         })
                     }
                 >
@@ -329,7 +461,9 @@ const styles = StyleSheet.create({
     },
     headerTitle: { color: "#fff", fontSize: 18, fontWeight: "600" },
     loading: { marginTop: 150, textAlign: "center", fontSize: 16, color: "#555" },
-    scrollContent: { padding: 20, paddingBottom: 120 },
+    scrollContent: { padding: 16, paddingBottom: 120 },
+
+    // Card styles with profile picture
     card: {
         backgroundColor: "#fff",
         borderRadius: 12,
@@ -340,16 +474,120 @@ const styles = StyleSheet.create({
         shadowRadius: 8,
         elevation: 3,
     },
-    name: { fontSize: 22, fontWeight: "700", color: "#333", marginBottom: 8 },
-    details: { fontSize: 14, color: "#777", marginLeft: 6 },
-    rate: { fontSize: 18, fontWeight: "600", color: "#b58dde", marginTop: 10 },
-    section: { marginBottom: 20 },
-    sectionTitle: { fontSize: 18, fontWeight: "700", color: "#333", marginBottom: 6 },
+    profileHeader: {
+        flexDirection: "row",
+        alignItems: "flex-start",
+        marginBottom: 16,
+    },
+    avatarContainer: {
+        marginRight: 16,
+    },
+    profileImage: {
+        width: 70,
+        height: 70,
+        borderRadius: 35,
+        backgroundColor: '#f0f0f0',
+    },
+    avatarPlaceholder: {
+        width: 70,
+        height: 70,
+        borderRadius: 35,
+        backgroundColor: "#b58dde",
+        justifyContent: "center",
+        alignItems: "center",
+    },
+    avatarText: {
+        color: "#fff",
+        fontSize: 20,
+        fontWeight: "bold",
+    },
+    profileInfo: {
+        flex: 1,
+    },
+    name: {
+        fontSize: 20,
+        fontWeight: "700",
+        color: "#333",
+        marginBottom: 6
+    },
+    distanceContainer: {
+        flexDirection: "row",
+        alignItems: "center",
+        marginBottom: 4
+    },
+    distanceText: {
+        fontSize: 14,
+        color: "#777",
+        marginLeft: 6
+    },
+    ratingContainer: {
+        flexDirection: "row",
+        alignItems: "center",
+        marginBottom: 6
+    },
+    ratingStars: {
+        flexDirection: "row",
+        alignItems: "center"
+    },
+    ratingText: {
+        fontSize: 14,
+        color: "#333",
+        marginLeft: 6,
+        fontWeight: "600"
+    },
+    reviewCount: {
+        fontSize: 14,
+        color: "#777",
+        marginLeft: 8
+    },
+    rate: {
+        fontSize: 16,
+        fontWeight: "600",
+        color: "#b58dde",
+    },
+    badgeAndMessageContainer: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginTop: 8,
+    },
+    fullTimeBadge: {
+        backgroundColor: "#EDE4F7",
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 16,
+    },
+    fullTimeText: {
+        fontSize: 12,
+        color: "#7B52AB",
+        fontWeight: "600",
+    },
+    messageButton: {
+        backgroundColor: "#b58dde",
+        borderRadius: 20,
+        paddingVertical: 10,
+        paddingHorizontal: 20,
+    },
+    messageButtonText: {
+        color: "#fff",
+        fontSize: 14,
+        fontWeight: "600",
+    },
+
+    section: {
+        marginBottom: 20
+    },
+    sectionTitle: {
+        fontSize: 18,
+        fontWeight: "700",
+        color: "#333",
+        marginBottom: 12
+    },
     paragraph: {
         fontSize: 14,
         color: "#555",
         backgroundColor: "#fff",
-        padding: 12,
+        padding: 16,
         borderRadius: 10,
         lineHeight: 20,
         shadowColor: "#000",
@@ -357,10 +595,16 @@ const styles = StyleSheet.create({
         shadowRadius: 3,
         elevation: 1,
     },
+    noReviews: {
+        color: "#666",
+        fontStyle: "italic",
+        textAlign: "center",
+        padding: 20,
+    },
     appointmentButton: {
         backgroundColor: "#b58dde",
         borderRadius: 30,
-        paddingVertical: 14,
+        paddingVertical: 16,
         alignItems: "center",
         marginBottom: 20,
         shadowColor: "#000",
@@ -368,7 +612,11 @@ const styles = StyleSheet.create({
         shadowRadius: 6,
         elevation: 3,
     },
-    appointmentText: { color: "#fff", fontSize: 16, fontWeight: "700" },
+    appointmentText: {
+        color: "#fff",
+        fontSize: 16,
+        fontWeight: "700"
+    },
     bottomNav: {
         flexDirection: "row",
         justifyContent: "space-around",
@@ -376,10 +624,18 @@ const styles = StyleSheet.create({
         borderTopWidth: 1,
         borderColor: "#ddd",
         backgroundColor: "#fff",
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
     },
 
     /* Skills */
-    skillsContainer: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+    skillsContainer: {
+        flexDirection: "row",
+        flexWrap: "wrap",
+        gap: 8
+    },
     skillPill: {
         backgroundColor: "#EDE4F7",
         paddingHorizontal: 12,
@@ -388,13 +644,17 @@ const styles = StyleSheet.create({
         marginRight: 6,
         marginBottom: 6,
     },
-    skillText: { fontSize: 13, color: "#7B52AB", fontWeight: "500" },
+    skillText: {
+        fontSize: 13,
+        color: "#7B52AB",
+        fontWeight: "500"
+    },
 
     /* Reviews */
     reviewCard: {
         backgroundColor: "#fff",
         borderRadius: 12,
-        padding: 12,
+        padding: 16,
         marginBottom: 10,
         borderWidth: 1,
         borderColor: "#F0E7FB",
@@ -403,10 +663,65 @@ const styles = StyleSheet.create({
         shadowRadius: 4,
         elevation: 1,
     },
-    reviewHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-    reviewerName: { fontWeight: "700", color: "#333", fontSize: 14 },
-    reviewMeta: { flexDirection: "row", alignItems: "center" },
-    reviewRatingText: { marginLeft: 6, color: "#333", fontWeight: "700" },
-    reviewDate: { color: "#888", fontSize: 12, marginTop: 4 },
-    reviewComment: { marginTop: 8, color: "#444", fontSize: 14, lineHeight: 20 },
+    reviewHeader: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "flex-start",
+        marginBottom: 8,
+    },
+    reviewerInfo: {
+        flexDirection: "row",
+        alignItems: "flex-start",
+        flex: 1,
+    },
+    reviewerAvatar: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        marginRight: 12,
+        backgroundColor: '#f0f0f0',
+    },
+    reviewerAvatarPlaceholder: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: "#b58dde",
+        justifyContent: "center",
+        alignItems: "center",
+        marginRight: 12,
+    },
+    reviewerAvatarText: {
+        color: "#fff",
+        fontSize: 14,
+        fontWeight: "bold",
+    },
+    reviewerTextInfo: {
+        flex: 1,
+    },
+    reviewerName: {
+        fontWeight: "700",
+        color: "#333",
+        fontSize: 14,
+        marginBottom: 2,
+    },
+    reviewMeta: {
+        flexDirection: "row",
+        alignItems: "center"
+    },
+    reviewRatingText: {
+        marginLeft: 6,
+        color: "#333",
+        fontWeight: "700",
+        fontSize: 12,
+    },
+    reviewDate: {
+        color: "#888",
+        fontSize: 12,
+    },
+    reviewComment: {
+        color: "#444",
+        fontSize: 14,
+        lineHeight: 20,
+        marginTop: 8,
+    },
 });
