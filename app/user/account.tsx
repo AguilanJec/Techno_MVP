@@ -71,10 +71,7 @@ export default function AccountScreen() {
                         <Text style={styles.itemText}>My messages</Text>
                         <Ionicons name="chevron-forward" size={18} color="#777" />
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.item} onPress={() => router.push({
-                        pathname: "/authentication/edit_address",
-                        params: { origin: "account" }
-                    })}>
+                    <TouchableOpacity style={styles.item} >
                         <View style={styles.locationItem}>
                             <Text style={styles.itemText}>My location</Text>
                             {userData?.address && (
@@ -91,10 +88,6 @@ export default function AccountScreen() {
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>Support</Text>
                     <TouchableOpacity style={styles.item} onPress={() => router.push("/feedback")}>
-                        <Text style={styles.itemText}>App feedback</Text>
-                        <Ionicons name="chevron-forward" size={18} color="#777" />
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.item}>
                         <Text style={styles.itemText}>Help centre</Text>
                         <Ionicons name="chevron-forward" size={18} color="#777" />
                     </TouchableOpacity>

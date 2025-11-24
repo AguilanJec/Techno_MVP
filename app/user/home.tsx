@@ -1,4 +1,4 @@
-// app/Home.tsx  (replace your current Home component with this)
+// app/Home.tsx
 import React, { useEffect, useState, useRef } from 'react';
 import {
     View,
@@ -10,6 +10,8 @@ import {
     FlatList,
     Dimensions,
     ActivityIndicator,
+    Modal,
+    SafeAreaView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from "expo-router";
@@ -30,14 +32,14 @@ interface UserData {
     id: string;
     name: string;
     role: string;
-    picture?: any;            // new picture field (string or object)
+    picture?: any;
     latitude?: number;
     longitude?: number;
     distance?: string;
     distanceKm?: number;
     rate?: string;
-    rating?: number;   // average rating (computed)
-    reviews?: number;  // review count (computed)
+    rating?: number;
+    reviews?: number;
     bio?: string;
 }
 
@@ -61,6 +63,11 @@ const Home = () => {
     const [userLon, setUserLon] = useState<number | null>(null);
     const [loading, setLoading] = useState(true);
 
+    // See-more modal state
+    const [seeMoreVisible, setSeeMoreVisible] = useState(false);
+    const [seeMoreTitle, setSeeMoreTitle] = useState("");
+    const [seeMoreList, setSeeMoreList] = useState<UserData[]>([]);
+
     const auth = getAuth();
     const loggedInEmail = auth.currentUser?.email;
 
@@ -68,7 +75,7 @@ const Home = () => {
     const deg2rad = (deg: number) => deg * (Math.PI / 180);
 
     const getDistanceFromLatLonInKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-        const R = 6371; // Radius of the earth in km
+        const R = 6371;
         const dLat = deg2rad(lat2 - lat1);
         const dLon = deg2rad(lon2 - lon1);
         const a =
@@ -76,48 +83,34 @@ const Home = () => {
             Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
             Math.sin(dLon / 2) * Math.sin(dLon / 2);
         const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        const distance = R * c; // Distance in km
+        const distance = R * c;
         return distance;
     };
 
     const formatDistance = (distanceKm: number) => `${distanceKm.toFixed(2)} km`;
 
-    // Helper to normalize picture field into a usable URI or null
+    // Helper to normalize picture field
     const getPictureUri = (picture: any): string | null => {
         if (!picture && picture !== "") return null;
 
-        // if it's already a data URL
         if (typeof picture === "string") {
             const s = picture.trim();
-
-            // data URL
             if (s.startsWith("data:")) return s;
-
-            // http(s) url
             if (s.startsWith("http://") || s.startsWith("https://")) return s;
-
-            // some systems store "url(...)" wrappers — strip them
             if (s.startsWith("url(")) {
                 const inside = s.replace(/^url\(['"]?/, "").replace(/['"]?\)$/, "");
                 if (inside.startsWith("data:") || inside.startsWith("http")) return inside;
             }
 
-            // plain base64 string (common): check if it looks like base64 and length is reasonably large
             const candidate = s.replace(/\s+/g, "");
             const base64Regex = /^[A-Za-z0-9+/=]+$/;
             if (candidate.length > 100 && base64Regex.test(candidate)) {
-                // assume jpeg if unknown
                 return `data:image/jpeg;base64,${candidate}`;
             }
-
-            // fallback: maybe it's an URL without protocol
             if (s.startsWith("//")) return `https:${s}`;
-
-            // otherwise return as-is (may still be valid)
             return s;
         }
 
-        // if it's an object { base64: '...' } or { url: '...' }
         if (typeof picture === "object") {
             if (typeof picture.base64 === "string" && picture.base64.length > 0) {
                 return `data:image/jpeg;base64,${String(picture.base64).replace(/\s+/g, "")}`;
@@ -130,7 +123,7 @@ const Home = () => {
         return null;
     };
 
-    // Fetch logged-in user and providers; compute avg rating from embedded reviews
+    // Fetch data
     useEffect(() => {
         const fetchAll = async () => {
             setLoading(true);
@@ -138,7 +131,6 @@ const Home = () => {
                 let localLat: number | null = null;
                 let localLon: number | null = null;
 
-                // Fetch logged-in user (name + coords) from "users" collection
                 if (loggedInEmail) {
                     const q = query(collection(db, "users"), where("email", "==", loggedInEmail));
                     const userSnap = await getDocs(q);
@@ -154,33 +146,27 @@ const Home = () => {
                     }
                 }
 
-                // Fetch all providers
                 const providersSnap = await getDocs(collection(db, "providers"));
 
                 const providersData: UserData[] = providersSnap.docs.map(docSnap => {
                     const d = docSnap.data() as any;
-
-                    // reviews might be an array of map objects in the provider doc
                     const reviewsArray: Review[] = Array.isArray(d.reviews) ? d.reviews : [];
-
-                    // Compute review count
                     const reviewCount = reviewsArray.length;
 
-                    // Compute average rating (only include numeric ratings)
                     let avgRating: number | undefined = undefined;
                     if (reviewCount > 0) {
                         const sum = reviewsArray.reduce((acc, r) => {
                             const rVal = typeof r?.rating === "number" ? r.rating : (Number(r?.rating) || 0);
                             return acc + rVal;
                         }, 0);
-                        avgRating = Number((sum / reviewCount).toFixed(1)); // one decimal place
+                        avgRating = Number((sum / reviewCount).toFixed(1));
                     }
 
                     return {
                         id: docSnap.id,
                         name: d.name || "",
                         role: d.role || "",
-                        picture: d.picture ?? undefined, // <-- new picture field
+                        picture: d.picture ?? undefined,
                         latitude: typeof d.latitude === "number" ? d.latitude : undefined,
                         longitude: typeof d.longitude === "number" ? d.longitude : undefined,
                         rate: d.rate ? String(d.rate) : undefined,
@@ -190,7 +176,6 @@ const Home = () => {
                     } as UserData;
                 });
 
-                // Compute distance if we have user's coords
                 const withDistance = providersData.map(p => {
                     if (localLat !== null && localLon !== null && typeof p.latitude === "number" && typeof p.longitude === "number") {
                         const km = getDistanceFromLatLonInKm(localLat, localLon, p.latitude, p.longitude);
@@ -200,7 +185,6 @@ const Home = () => {
                     }
                 });
 
-                // Filter by role (case-insensitive); support role strings like "tutoring", "tutor", "babysitting", "babysitter"
                 setTutors(withDistance.filter(item => (item.role || "").toLowerCase().includes("tutor")));
                 setBabysitters(withDistance.filter(item => (item.role || "").toLowerCase().includes("baby")));
             } catch (err) {
@@ -213,7 +197,7 @@ const Home = () => {
         fetchAll();
     }, [loggedInEmail]);
 
-    // Popular services (unchanged)
+    // Popular services
     const popularServices: ServiceCard[] = [
         {
             id: '1',
@@ -233,7 +217,7 @@ const Home = () => {
         }
     ];
 
-    // Scroll helper (you may want to compute exact offsets later)
+    // Scroll helper
     const scrollToSection = (section: 'tutors' | 'babysitters') => {
         let yPosition = 0;
         if (section === 'tutors') yPosition = 200;
@@ -241,6 +225,20 @@ const Home = () => {
         scrollViewRef.current?.scrollTo({ y: yPosition, animated: true });
     };
 
+    // See-more functionality
+    const openSeeMore = (title: string, data: UserData[]) => {
+        setSeeMoreTitle(title);
+        setSeeMoreList(data);
+        setSeeMoreVisible(true);
+    };
+
+    const closeSeeMore = () => {
+        setSeeMoreVisible(false);
+        setSeeMoreTitle("");
+        setSeeMoreList([]);
+    };
+
+    // Render functions
     const renderServiceCard = ({ item }: { item: ServiceCard }) => (
         <TouchableOpacity
             style={[styles.serviceCard, { backgroundColor: item.color }]}
@@ -254,7 +252,6 @@ const Home = () => {
         </TouchableOpacity>
     );
 
-    // Tutor & Babysitter card renderers now use picture if present
     const renderTutorCard = ({ item }: { item: UserData }) => {
         const uri = getPictureUri(item.picture);
         return (
@@ -301,6 +298,49 @@ const Home = () => {
         );
     };
 
+    // Modal card renderer (similar to Search screen)
+    const renderModalCard = ({ item }: { item: UserData }) => {
+        const uri = getPictureUri(item.picture);
+        return (
+            <TouchableOpacity
+                style={styles.modalCard}
+                onPress={() => {
+                    closeSeeMore();
+                    router.push({ pathname: "/user/details", params: { id: item.id } });
+                }}
+            >
+                <View style={styles.modalCardContent}>
+                    <View style={styles.modalProfileInfo}>
+                        {uri ? (
+                            <Image source={{ uri }} style={styles.modalAvatar} resizeMode="cover" />
+                        ) : (
+                            <Ionicons name="person-circle-outline" size={50} color="#b58dde" />
+                        )}
+                        <View style={styles.modalTextInfo}>
+                            <Text style={styles.modalName}>{item.name}</Text>
+                            <Text style={styles.modalRole}>{item.role}</Text>
+                            <View style={styles.modalDistanceContainer}>
+                                <Ionicons name="location-outline" size={14} color="#666" />
+                                <Text style={styles.modalDistance}>{item.distance ?? "—"}</Text>
+                            </View>
+                            <View style={styles.modalRatingContainer}>
+                                <Ionicons name="star" size={14} color="#f1c40f" />
+                                <Text style={styles.modalRating}>{item.rating ?? "—"}</Text>
+                                <Text style={styles.modalReviews}>{item.reviews ?? 0} reviews</Text>
+                            </View>
+                        </View>
+                    </View>
+                    <Ionicons
+                        name="heart-outline"
+                        size={20}
+                        color="#E85D75"
+                        style={styles.modalHeartIcon}
+                    />
+                </View>
+            </TouchableOpacity>
+        );
+    };
+
     return (
         <View style={styles.container}>
             {/* Header */}
@@ -318,20 +358,12 @@ const Home = () => {
             </View>
 
             {/* Location Card */}
-            <TouchableOpacity
-                onPress={() => router.push({
-                    pathname: "/authentication/edit_address",
-                    params: { origin: "home" } // Pass the origin
-                })}
-                style={styles.locationCard}
-            >
+            <TouchableOpacity style={styles.locationCard}>
                 <Ionicons name="location-outline" size={22} color="#fff" />
                 <View>
                     <Text style={styles.locationText}>Baguio City</Text>
                     <Text style={styles.locationSubText}>2019 Sustainable</Text>
                 </View>
-
-                <View style={styles.profileIcon} />
                 <Ionicons name="chevron-down-outline" size={18} color="#fff" style={{ marginLeft: 'auto' }} />
             </TouchableOpacity>
 
@@ -372,12 +404,14 @@ const Home = () => {
                 <View ref={tutorsSectionRef} style={styles.sectionContainer}>
                     <View style={styles.sectionHeader}>
                         <Text style={styles.sectionTitle}>Best Tutors</Text>
-                        <TouchableOpacity><Text style={styles.seeMoreText}>See more</Text></TouchableOpacity>
+                        <TouchableOpacity onPress={() => openSeeMore("Best Tutors", tutors)}>
+                            <Text style={styles.seeMoreText}>See more</Text>
+                        </TouchableOpacity>
                     </View>
 
                     {loading ? <ActivityIndicator size="small" /> : (
                         <FlatList
-                            data={tutors}
+                            data={tutors.slice(0, 5)} // Show only first 5 in horizontal list
                             renderItem={renderTutorCard}
                             keyExtractor={(item) => item.id}
                             horizontal
@@ -391,12 +425,14 @@ const Home = () => {
                 <View ref={babysittersSectionRef} style={styles.sectionContainer}>
                     <View style={styles.sectionHeader}>
                         <Text style={styles.sectionTitle}>Best Babysitters</Text>
-                        <TouchableOpacity><Text style={styles.seeMoreText}>See more</Text></TouchableOpacity>
+                        <TouchableOpacity onPress={() => openSeeMore("Best Babysitters", babysitters)}>
+                            <Text style={styles.seeMoreText}>See more</Text>
+                        </TouchableOpacity>
                     </View>
 
                     {loading ? <ActivityIndicator size="small" /> : (
                         <FlatList
-                            data={babysitters}
+                            data={babysitters.slice(0, 5)} // Show only first 5 in horizontal list
                             renderItem={renderBabysitterCard}
                             keyExtractor={(item) => item.id}
                             horizontal
@@ -408,6 +444,28 @@ const Home = () => {
 
                 <View style={styles.bottomPadding} />
             </ScrollView>
+
+            {/* See More Modal */}
+            <Modal visible={seeMoreVisible} animationType="slide" transparent={true} onRequestClose={closeSeeMore}>
+                <View style={styles.seeMoreModalOverlay}>
+                    <View style={styles.seeMoreModal}>
+                        <View style={styles.seeMoreHeader}>
+                            <Text style={styles.seeMoreTitle}>{seeMoreTitle}</Text>
+                            <TouchableOpacity onPress={closeSeeMore}>
+                                <Ionicons name="close" size={22} color="#333" />
+                            </TouchableOpacity>
+                        </View>
+
+                        <FlatList
+                            data={seeMoreList}
+                            keyExtractor={(item) => item.id}
+                            renderItem={renderModalCard}
+                            showsVerticalScrollIndicator={false}
+                            contentContainerStyle={styles.seeMoreListContent}
+                        />
+                    </View>
+                </View>
+            </Modal>
 
             {/* Floating Chatbot */}
             <TouchableOpacity
@@ -474,12 +532,117 @@ const styles = StyleSheet.create({
     floatingChatbotIcon: { width: 60, height: 60, borderRadius: 30 },
     bottomNav: { position: 'absolute', bottom: 0, left: 0, right: 0, flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', paddingVertical: 10, borderTopWidth: 1, borderColor: '#eee', backgroundColor: '#fff' },
 
-    // avatar style
+    // Avatar style
     avatar: {
         width: 50,
         height: 50,
         borderRadius: 25,
         backgroundColor: '#EEE',
         overflow: 'hidden',
+    },
+
+    // See More Modal Styles
+    seeMoreModalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.4)',
+        justifyContent: 'flex-end',
+    },
+    seeMoreModal: {
+        backgroundColor: '#fff',
+        borderTopLeftRadius: 18,
+        borderTopRightRadius: 18,
+        paddingHorizontal: 16,
+        paddingTop: 12,
+        maxHeight: '80%',
+    },
+    seeMoreHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingBottom: 8,
+        marginBottom: 10,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f0f0f0',
+    },
+    seeMoreTitle: {
+        fontSize: 18,
+        fontWeight: '700',
+        color: '#333',
+    },
+    seeMoreListContent: {
+        paddingBottom: 30,
+    },
+
+    // Modal Card Styles
+    modalCard: {
+        backgroundColor: '#fff',
+        borderRadius: 12,
+        padding: 15,
+        marginBottom: 12,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 3,
+        elevation: 2,
+        borderWidth: 1,
+        borderColor: '#f0f0f0',
+    },
+    modalCardContent: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+    },
+    modalProfileInfo: {
+        flexDirection: 'row',
+        flex: 1,
+    },
+    modalTextInfo: {
+        flex: 1,
+        marginLeft: 12,
+    },
+    modalAvatar: {
+        width: 50,
+        height: 50,
+        borderRadius: 25,
+        backgroundColor: '#EEE',
+    },
+    modalName: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: '#333',
+        marginBottom: 4,
+    },
+    modalRole: {
+        fontSize: 14,
+        color: '#666',
+        marginBottom: 6,
+    },
+    modalDistanceContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 4,
+    },
+    modalDistance: {
+        fontSize: 14,
+        color: '#666',
+        marginLeft: 6,
+    },
+    modalRatingContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    modalRating: {
+        fontSize: 14,
+        color: '#333',
+        fontWeight: 'bold',
+        marginLeft: 4,
+        marginRight: 4,
+    },
+    modalReviews: {
+        fontSize: 14,
+        color: '#666',
+    },
+    modalHeartIcon: {
+        marginTop: 4,
     },
 });
