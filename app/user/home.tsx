@@ -373,7 +373,7 @@ const Home = () => {
                 showsVerticalScrollIndicator={false}
                 style={styles.scrollContent}
             >
-                {/* No Service Planned */}
+                {/* No service Planned */}
                 <View style={styles.servicePlannedCard}>
                     <View style={styles.servicePlannedLeft}>
                         <Text style={styles.noServiceText}>No Service planned</Text>

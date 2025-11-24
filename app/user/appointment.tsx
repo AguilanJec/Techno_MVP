@@ -519,7 +519,7 @@ export default function AppointmentScreen() {
             </View>
 
             <ScrollView contentContainerStyle={styles.scrollContent}>
-                {/* Service card */}
+                {/* service card */}
                 <View style={styles.card}>
                     <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
                         <View>

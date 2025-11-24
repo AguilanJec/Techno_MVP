@@ -97,7 +97,7 @@ export default function LoginScreen() {
                 if (userData) {
                     // Check the role from either collection
                     if (userRole === "babysitting" || userRole === "tutoring") {
-                        router.push("/service_home"); // Navigate service providers to their home
+                        router.push("../service/service_home"); // Navigate service providers to their home
                     } else {
                         // Default to parent home or handle other roles if needed
                         router.push("/user/home");
