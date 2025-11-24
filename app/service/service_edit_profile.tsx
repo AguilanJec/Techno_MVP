@@ -12,7 +12,7 @@ import {
     Alert,
 } from "react-native";
 import { useRouter } from "expo-router";
-import { auth, db } from "../firebaseConfig";
+import { auth, db } from "../../firebaseConfig";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 
 export default function ServiceEditProfileScreen() {
@@ -73,7 +73,7 @@ export default function ServiceEditProfileScreen() {
             });
 
             Alert.alert("Success", "Profile updated successfully!");
-            router.replace("/service_profile"); // Navigate back to service_profile after saving
+            router.replace("../Service/service_profile"); // Navigate back to service_profile after saving
         } catch (error: any) {
             console.error("Error updating profile:", error);
             Alert.alert("Error", "Failed to update profile");
@@ -100,7 +100,7 @@ export default function ServiceEditProfileScreen() {
         <ScrollView style={styles.container}>
             {/* Header */}
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => router.push("/service_profile")} style={styles.backButton}> {/* Fixed navigation */}
+                <TouchableOpacity onPress={() => router.push("../Service/service_profile")} style={styles.backButton}> {/* Fixed navigation */}
                     <Text style={styles.backText}>{"< Back"}</Text>
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Edit Profile</Text> {/* Changed title */}
