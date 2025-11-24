@@ -61,7 +61,6 @@ export default function MessageScreen() {
 
     const setupConversationsListener = (currentUserId: string) => {
         try {
-            // Get conversations without ordering to avoid index issues
             const conversationsQuery = query(
                 collection(db, "conversations"),
                 where("participants", "array-contains", currentUserId)
@@ -111,71 +110,100 @@ export default function MessageScreen() {
         }
     };
 
+    const getExistingConversationProviders = () => {
+        if (!currentUser || conversations.length === 0) {
+            return [];
+        }
+
+        const existingProviders: Provider[] = [];
+
+        conversations.forEach(conversation => {
+            const otherParticipantIndex = conversation.participants.findIndex(id => id !== currentUser.uid);
+            if (otherParticipantIndex !== -1) {
+                const providerId = conversation.participants[otherParticipantIndex];
+                const providerName = conversation.participantNames[otherParticipantIndex];
+
+                // Check if we already added this provider
+                const existingProvider = existingProviders.find(p => p.id === providerId);
+
+                if (!existingProvider) {
+                    existingProviders.push({
+                        id: providerId,
+                        name: providerName,
+                        type: "Provider" // Default type since we don't have full provider data
+                    } as Provider);
+                }
+            }
+        });
+
+        return existingProviders;
+    };
+
     const fetchAvailableProviders = async () => {
         if (!currentUser) return;
 
         try {
             setContactsLoading(true);
 
-            // Get all providers that the user has conversations with
-            const providerIds: string[] = [];
-            const providerNames: string[] = [];
+            // Get providers from existing conversations only
+            const existingProviders = getExistingConversationProviders();
 
-            // Extract provider IDs and names from existing conversations
-            conversations.forEach(conversation => {
-                const otherParticipantIndex = conversation.participants.findIndex(id => id !== currentUser.uid);
-                if (otherParticipantIndex !== -1) {
-                    const providerId = conversation.participants[otherParticipantIndex];
-                    const providerName = conversation.participantNames[otherParticipantIndex];
+            // If we want to enrich with more provider data from Firestore, we can do:
+            if (existingProviders.length > 0) {
+                const providerIds = existingProviders.map(p => p.id);
+                const enrichedProviders: Provider[] = [...existingProviders]; // Start with basic data
 
-                    if (!providerIds.includes(providerId)) {
-                        providerIds.push(providerId);
-                        providerNames.push(providerName);
+                try {
+                    // Try to fetch additional provider details in batches
+                    const batchSize = 10;
+                    const batches = [];
+
+                    for (let i = 0; i < providerIds.length; i += batchSize) {
+                        const batch = providerIds.slice(i, i + batchSize);
+                        const providersQuery = query(
+                            collection(db, "providers"),
+                            where("__name__", "in", batch)
+                        );
+                        batches.push(getDocs(providersQuery));
                     }
-                }
-            });
 
-            // Fetch provider details from Firestore
-            const providersData: Provider[] = [];
+                    const allSnapshots = await Promise.all(batches);
 
-            if (providerIds.length > 0) {
-                const batchSize = 10;
-                const batches = [];
+                    // Update providers with additional data
+                    allSnapshots.forEach((snapshot) => {
+                        snapshot.forEach((doc) => {
+                            const providerData = doc.data();
+                            const providerIndex = enrichedProviders.findIndex(p => p.id === doc.id);
 
-                for (let i = 0; i < providerIds.length; i += batchSize) {
-                    const batch = providerIds.slice(i, i + batchSize);
-                    const providersQuery = query(
-                        collection(db, "providers"),
-                        where("__name__", "in", batch)
-                    );
-                    batches.push(getDocs(providersQuery));
-                }
-
-                const allSnapshots = await Promise.all(batches);
-
-                allSnapshots.forEach((snapshot) => {
-                    snapshot.forEach((doc) => {
-                        const providerData = doc.data();
-                        if (providerData.name) {
-                            providersData.push({
-                                id: doc.id,
-                                name: providerData.name,
-                                bio: providerData.bio,
-                                distance: providerData.distance,
-                                rate: providerData.rate,
-                                rating: providerData.rating,
-                                type: providerData.type,
-                                skills: providerData.skills
-                            } as Provider);
-                        }
+                            if (providerIndex !== -1) {
+                                enrichedProviders[providerIndex] = {
+                                    ...enrichedProviders[providerIndex],
+                                    bio: providerData.bio,
+                                    distance: providerData.distance,
+                                    rate: providerData.rate,
+                                    rating: providerData.rating,
+                                    type: providerData.type || "Provider",
+                                    skills: providerData.skills
+                                };
+                            }
+                        });
                     });
-                });
+
+                    setAvailableProviders(enrichedProviders);
+                } catch (error) {
+                    console.error("Error fetching provider details, using basic data:", error);
+                    // If Firestore fetch fails, use the basic data we have
+                    setAvailableProviders(existingProviders);
+                }
+            } else {
+                setAvailableProviders([]);
             }
 
-            setAvailableProviders(providersData);
             setContactsLoading(false);
         } catch (error) {
             console.error("Error fetching available providers:", error);
+            // Fallback to basic conversation data
+            setAvailableProviders(getExistingConversationProviders());
             setContactsLoading(false);
         }
     };
@@ -285,7 +313,7 @@ export default function MessageScreen() {
             </View>
             <View style={styles.contactInfo}>
                 <Text style={styles.contactName}>{item.name}</Text>
-                <Text style={styles.userType}>{item.type || "Tutor"}</Text>
+                <Text style={styles.userType}>{item.type || "Provider"}</Text>
                 {item.skills && item.skills.length > 0 && (
                     <Text style={styles.skills} numberOfLines={1}>
                         {item.skills.slice(0, 2).join(", ")}
@@ -343,7 +371,7 @@ export default function MessageScreen() {
                             {searchQuery ? "No conversations found" : "No conversations yet"}
                         </Text>
                         <Text style={styles.emptyStateSubText}>
-                            Start a new conversation by tapping &#34;Write a message&#34;
+                            Start a new conversation by tapping "Write a message"
                         </Text>
                     </View>
                 }
@@ -387,7 +415,7 @@ export default function MessageScreen() {
                 <View style={styles.modalContainer}>
                     <View style={styles.modalContent}>
                         <View style={styles.modalHeader}>
-                            <Text style={styles.modalTitle}>New Message</Text>
+                            <Text style={styles.modalTitle}>Existing Conversations</Text>
                             <TouchableOpacity onPress={() => setModalVisible(false)}>
                                 <Text style={styles.closeButton}>✕</Text>
                             </TouchableOpacity>
@@ -416,7 +444,10 @@ export default function MessageScreen() {
                                 ListEmptyComponent={
                                     <View style={styles.emptyState}>
                                         <Text style={styles.emptyStateText}>
-                                            {searchQuery ? "No providers found" : "No providers available"}
+                                            {searchQuery ? "No providers found" : "No existing conversations"}
+                                        </Text>
+                                        <Text style={styles.emptyStateSubText}>
+                                            You don't have any conversations yet
                                         </Text>
                                     </View>
                                 }
