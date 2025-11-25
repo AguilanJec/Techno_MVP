@@ -130,12 +130,8 @@ export default function ServiceAccountScreen() {
                     <Text style={styles.sectionTitle}>Support</Text>
                     <TouchableOpacity
                         style={styles.item}
-                        onPress={() => router.push("/feedback")} // Assuming feedback screen exists
+                        onPress={() => router.push("/feedback")}
                     >
-                        <Text style={styles.itemText}>App feedback</Text>
-                        <Ionicons name="chevron-forward" size={18} color="#777" />
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.item}>
                         <Text style={styles.itemText}>Help centre</Text>
                         <Ionicons name="chevron-forward" size={18} color="#777" />
                     </TouchableOpacity>

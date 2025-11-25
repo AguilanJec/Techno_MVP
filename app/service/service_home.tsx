@@ -274,7 +274,7 @@ export default function ServiceHome() {
             </View>
 
             {/* Location Card */}
-            <TouchableOpacity onPress={() => router.push("/authentication/edit_address")} style={styles.locationCard}>
+            <TouchableOpacity style={styles.locationCard}>
                 <Ionicons name="location-outline" size={22} color="#fff" />
                 <View>
                     <Text style={styles.locationText}>Baguio City</Text>
