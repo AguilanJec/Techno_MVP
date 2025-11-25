@@ -43,7 +43,7 @@ type Booking = {
 
 const MyBookingsListScreen: React.FC = () => {
     const router = useRouter();
-    const [selectedTab, setSelectedTab] = useState<'All' | 'Pending' | 'Ongoing' | 'Completed'>('All');
+    const [selectedTab, setSelectedTab] = useState<'All' | 'Pending' | 'Accepted' | 'Completed'>('All');
     const [bookings, setBookings] = useState<Booking[]>([]);
     const [loading, setLoading] = useState(true);
 
@@ -65,7 +65,7 @@ const MyBookingsListScreen: React.FC = () => {
             const d = docData as any;
             const rawStatus = (d.status ?? 'pending').toString().toLowerCase();
             const statusLabel =
-                rawStatus === 'ongoing' ? 'Ongoing' : rawStatus === 'completed' ? 'Completed' : (rawStatus === 'cancelled' ? 'Cancelled' : 'Pending');
+                rawStatus === 'accepted' ? 'Accepted' : rawStatus === 'completed' ? 'Completed' : (rawStatus === 'cancelled' ? 'Cancelled' : 'Pending');
 
             let createdAtNum = 0;
             try {
@@ -276,7 +276,7 @@ const MyBookingsListScreen: React.FC = () => {
             </View>
 
             <View style={styles.tabs}>
-                {['All', 'Pending', 'Ongoing', 'Completed'].map((tab) => (
+                {['All', 'Pending', 'Accepted', 'Completed'].map((tab) => (
                     <TouchableOpacity
                         key={tab}
                         style={[styles.tab, (selectedTab === tab) && styles.tabActive]}
@@ -333,7 +333,7 @@ const MyBookingsListScreen: React.FC = () => {
                                         style={[
                                             styles.statusBox,
                                             b.status === 'Pending' && styles.statusPending,
-                                            b.status === 'Ongoing' && styles.statusOngoing,
+                                            b.status === 'Accepted' && styles.statusAccepted,
                                             b.status === 'Completed' && styles.statusCompleted,
                                             b.status === 'Cancelled' && { backgroundColor: '#f8d7da' },
                                         ]}
@@ -342,7 +342,7 @@ const MyBookingsListScreen: React.FC = () => {
                                             style={[
                                                 styles.statusText,
                                                 b.status === 'Pending' && styles.statusTextPending,
-                                                b.status === 'Ongoing' && styles.statusTextOngoing,
+                                                b.status === 'Accepted' && styles.statusTextAccepted,
                                                 b.status === 'Completed' && styles.statusTextCompleted,
                                                 b.status === 'Cancelled' && { color: '#721c24' },
                                             ]}
@@ -481,7 +481,7 @@ const styles = StyleSheet.create({
     statusPending: {
         backgroundColor: '#fff3cd',
     },
-    statusOngoing: {
+    statusAccepted: {
         backgroundColor: '#d1ecf1',
     },
     statusCompleted: {
@@ -494,7 +494,7 @@ const styles = StyleSheet.create({
     statusTextPending: {
         color: '#856404',
     },
-    statusTextOngoing: {
+    statusTextAccepted: {
         color: '#0c5460',
     },
     statusTextCompleted: {

@@ -1,7 +1,19 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, TextInput, TouchableOpacity, Image, StyleSheet, Alert } from "react-native";
+import {
+    View,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    Image,
+    StyleSheet,
+    Alert,
+} from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { router } from "expo-router";
+import { auth, db } from "../../firebaseConfig";
+import { fetchSignInMethodsForEmail } from "firebase/auth";
+import { collection, query, where, getDocs } from "firebase/firestore";
+
 
 export default function RegisterScreen() {
     const navigation = useNavigation();
@@ -9,17 +21,17 @@ export default function RegisterScreen() {
     const [password, setPassword] = useState("");
     const [confirmPassword, setConfirmPassword] = useState("");
 
-    // State for validation feedback
+    // Error messages
     const [passwordError, setPasswordError] = useState("");
     const [confirmPasswordError, setConfirmPasswordError] = useState("");
     const [emailError, setEmailError] = useState("");
 
-    // State for input styling
+    // Input validation
     const [passwordValid, setPasswordValid] = useState(true);
     const [confirmPasswordValid, setConfirmPasswordValid] = useState(true);
     const [emailValid, setEmailValid] = useState(true);
 
-    // Validate password in real-time
+    // Live validation
     useEffect(() => {
         if (password.length > 0 && password.length < 6) {
             setPasswordError("Password must be at least 6 characters");
@@ -29,7 +41,7 @@ export default function RegisterScreen() {
             setPasswordValid(true);
         }
 
-        if (password.length > 0 && confirmPassword.length > 0 && password !== confirmPassword) {
+        if (confirmPassword.length > 0 && password !== confirmPassword) {
             setConfirmPasswordError("Passwords do not match");
             setConfirmPasswordValid(false);
         } else {
@@ -38,16 +50,22 @@ export default function RegisterScreen() {
         }
     }, [password, confirmPassword]);
 
-    const handleSignUp = () => {
+
+
+    const handleSignUp = async () => {
         let valid = true;
 
-        // Validate email
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!email) {
+        const cleanEmail = email.trim().toLowerCase();
+
+        // Strict email validation
+        const emailRegex = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
+
+        // Email validation
+        if (!cleanEmail) {
             setEmailError("Email is required");
             setEmailValid(false);
             valid = false;
-        } else if (!emailRegex.test(email)) {
+        } else if (!emailRegex.test(cleanEmail)) {
             setEmailError("Please enter a valid email");
             setEmailValid(false);
             valid = false;
@@ -56,7 +74,7 @@ export default function RegisterScreen() {
             setEmailValid(true);
         }
 
-        // Validate password
+        // Password validation
         if (!password) {
             setPasswordError("Password is required");
             setPasswordValid(false);
@@ -65,12 +83,9 @@ export default function RegisterScreen() {
             setPasswordError("Password must be at least 6 characters");
             setPasswordValid(false);
             valid = false;
-        } else {
-            setPasswordError("");
-            setPasswordValid(true);
         }
 
-        // Validate confirm password
+        // Confirm password validation
         if (!confirmPassword) {
             setConfirmPasswordError("Please confirm your password");
             setConfirmPasswordValid(false);
@@ -79,23 +94,57 @@ export default function RegisterScreen() {
             setConfirmPasswordError("Passwords do not match");
             setConfirmPasswordValid(false);
             valid = false;
-        } else {
-            setConfirmPasswordError("");
-            setConfirmPasswordValid(true);
         }
 
-        if (valid) {
-            // Navigate to Role Selection page with user info
+        if (!valid) return;
+
+        try {
+            // 1️⃣ Check Firebase Auth users
+            const methods = await fetchSignInMethodsForEmail(auth, cleanEmail);
+            if (methods.length > 0) {
+                setEmailError("Email already in use");
+                setEmailValid(false);
+                Alert.alert("Account Exists", "This email is already registered.");
+                return;
+            }
+
+            // 2️⃣ Check Firestore users table
+            const usersRef = collection(db, "users");
+            const checkUser = query(usersRef, where("email", "==", cleanEmail));
+            const userSnap = await getDocs(checkUser);
+
+            if (!userSnap.empty) {
+                setEmailError("Email already exists in users");
+                setEmailValid(false);
+                Alert.alert("Account Exists", "This email is already used by another user.");
+                return;
+            }
+
+            // 3️⃣ Check Firestore providers table
+            const providersRef = collection(db, "providers");
+            const checkProvider = query(providersRef, where("email", "==", cleanEmail));
+            const providerSnap = await getDocs(checkProvider);
+
+            if (!providerSnap.empty) {
+                setEmailError("Email already exists in providers");
+                setEmailValid(false);
+                Alert.alert("Account Exists", "This email is already used by a provider.");
+                return;
+            }
+
+            // If all checks pass → move to Terms & Conditions
             router.push({
-                pathname: "/authentication/role",
-                params: {
-                    email: String(email),
-                    password: String(password),
-                    confirmPassword: String(confirmPassword),
-                },
+                pathname: "/authentication/terms_conditions",
+                params: { email: cleanEmail, password, confirmPassword },
             });
+
+        } catch (error) {
+            console.log("Sign Up Error:", error);
+            Alert.alert("Error", "Something went wrong. Please try again later.");
         }
     };
+
+
 
     return (
         <View style={styles.container}>
@@ -112,7 +161,6 @@ export default function RegisterScreen() {
             <Text style={styles.title}>Sign Up</Text>
             <Text style={styles.subtitle}>Create your Account</Text>
 
-            {/* Email Input */}
             <TextInput
                 style={[styles.input, !emailValid && styles.inputError]}
                 placeholder="Email"
@@ -124,7 +172,6 @@ export default function RegisterScreen() {
             />
             {emailError ? <Text style={styles.errorText}>{emailError}</Text> : null}
 
-            {/* Password Input */}
             <TextInput
                 style={[styles.input, !passwordValid && styles.inputError]}
                 placeholder="Password"
@@ -135,7 +182,6 @@ export default function RegisterScreen() {
             />
             {passwordError ? <Text style={styles.errorText}>{passwordError}</Text> : null}
 
-            {/* Confirm Password Input */}
             <TextInput
                 style={[styles.input, !confirmPasswordValid && styles.inputError]}
                 placeholder="Confirm Password"
@@ -146,35 +192,8 @@ export default function RegisterScreen() {
             />
             {confirmPasswordError ? <Text style={styles.errorText}>{confirmPasswordError}</Text> : null}
 
-            <TouchableOpacity
-                style={styles.signUpButton}
-                onPress={() => {
-                    if (!email || !password || !confirmPassword) {
-                        Alert.alert("Error", "Please fill out all fields.");
-                        return;
-                    }
-
-                    if (password.length < 6) {
-                        Alert.alert("Password Too Weak", "Password must be at least 6 characters long.");
-                        return;
-                    }
-
-                    if (password !== confirmPassword) {
-                        Alert.alert("Error", "Passwords do not match.");
-                        return;
-                    }
-
-                    // Navigate to Terms & Conditions page with user info
-                    router.push({
-                        pathname: "/authentication/terms_conditions",
-                        params: {
-                            email,
-                            password,
-                            confirmPassword,
-                        },
-                    });
-                }}
-            >
+            {/* ⬇️ FIX: use handleSignUp */}
+            <TouchableOpacity style={styles.signUpButton} onPress={handleSignUp}>
                 <Text style={styles.signUpText}>Sign Up</Text>
             </TouchableOpacity>
 
@@ -185,6 +204,7 @@ export default function RegisterScreen() {
             </View>
 
             <Text style={styles.socialText}>sign up with</Text>
+
             <View style={styles.socialContainer}>
                 <TouchableOpacity style={styles.socialButton}>
                     <Image source={require("../../assets/Facebook_Logo.png")} style={styles.socialIcon} />
@@ -205,105 +225,24 @@ export default function RegisterScreen() {
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: "#EDE0FF",
-        alignItems: "center",
-        paddingTop: 80,
-    },
-    backButton: {
-        position: "absolute",
-        top: 50,
-        left: 20,
-    },
-    backText: {
-        fontSize: 16,
-        color: "#333",
-    },
-    logo: {
-        width: 160,
-        height: 160,
-    },
-    title: {
-        fontSize: 26,
-        fontWeight: "bold",
-        color: "#6A4BBC",
-        marginTop: 10,
-    },
-    subtitle: {
-        fontSize: 14,
-        color: "#444",
-        marginBottom: 20,
-    },
-    input: {
-        width: "80%",
-        backgroundColor: "#fff",
-        borderRadius: 10,
-        padding: 12,
-        marginBottom: 5, // Reduced margin
-        fontSize: 16,
-        elevation: 2,
-    },
-    inputError: {
-        borderColor: "#FF0000",
-        borderWidth: 2,
-        backgroundColor: "#FFE6E6", // Light red background
-    },
-    errorText: {
-        width: "80%",
-        color: "#FF0000",
-        fontSize: 12,
-        marginBottom: 10,
-        paddingLeft: 10,
-    },
-    signUpButton: {
-        backgroundColor: "#B7A1E5",
-        borderRadius: 10,
-        paddingVertical: 12,
-        width: "80%",
-        alignItems: "center",
-        marginTop: 10,
-    },
-    signUpText: {
-        color: "#fff",
-        fontSize: 18,
-        fontWeight: "bold",
-    },
-    dividerContainer: {
-        flexDirection: "row",
-        alignItems: "center",
-        marginVertical: 15,
-    },
-    divider: {
-        height: 1,
-        width: 60,
-        backgroundColor: "#aaa",
-    },
-    orText: {
-        marginHorizontal: 8,
-        color: "#444",
-    },
-    socialText: {
-        fontSize: 14,
-        color: "#444",
-    },
-    socialContainer: {
-        flexDirection: "row",
-        marginVertical: 10,
-    },
-    socialButton: {
-        marginHorizontal: 10,
-    },
-    socialIcon: {
-        width: 40,
-        height: 40,
-    },
-    footerText: {
-        marginTop: 15,
-        color: "#444",
-    },
-    loginLink: {
-        color: "#6A4BBC",
-        fontWeight: "bold",
-    },
+    container: { flex: 1, backgroundColor: "#EDE0FF", alignItems: "center", paddingTop: 80 },
+    backButton: { position: "absolute", top: 50, left: 20 },
+    backText: { fontSize: 16, color: "#333" },
+    logo: { width: 160, height: 160 },
+    title: { fontSize: 26, fontWeight: "bold", color: "#6A4BBC", marginTop: 10 },
+    subtitle: { fontSize: 14, color: "#444", marginBottom: 20 },
+    input: { width: "80%", backgroundColor: "#fff", borderRadius: 10, padding: 12, marginBottom: 5, fontSize: 16, elevation: 2 },
+    inputError: { borderColor: "#FF0000", borderWidth: 2, backgroundColor: "#FFE6E6" },
+    errorText: { width: "80%", color: "#FF0000", fontSize: 12, marginBottom: 10, paddingLeft: 10 },
+    signUpButton: { backgroundColor: "#B7A1E5", borderRadius: 10, paddingVertical: 12, width: "80%", alignItems: "center", marginTop: 10 },
+    signUpText: { color: "#fff", fontSize: 18, fontWeight: "bold" },
+    dividerContainer: { flexDirection: "row", alignItems: "center", marginVertical: 15 },
+    divider: { height: 1, width: 60, backgroundColor: "#aaa" },
+    orText: { marginHorizontal: 8, color: "#444" },
+    socialText: { fontSize: 14, color: "#444" },
+    socialContainer: { flexDirection: "row", marginVertical: 10 },
+    socialButton: { marginHorizontal: 10 },
+    socialIcon: { width: 40, height: 40 },
+    footerText: { marginTop: 15, color: "#444" },
+    loginLink: { color: "#6A4BBC", fontWeight: "bold" },
 });

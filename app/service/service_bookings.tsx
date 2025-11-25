@@ -8,9 +8,7 @@ import {
     ScrollView,
     RefreshControl,
     Alert,
-    Platform,
     TextInput,
-    FlatList,
     ActivityIndicator,
 } from "react-native";
 import { useRouter } from "expo-router";
@@ -27,31 +25,98 @@ import {
     getDoc,
     updateDoc,
     Timestamp,
-    DocumentData,
-    QuerySnapshot,
 } from "firebase/firestore";
 
-// Define the type for a single booking/appointment
+// ---------- Helpers ----------
+
+// Accepts a value that might be:
+// - string (e.g. "2025-11-22")
+// - Firestore Timestamp
+// - an object containing { hour12, minute, ampm } or { hour, minute, ampm }
+// Returns a human-friendly string.
+function formatTimeField(t: any) {
+    try {
+        if (t === null || t === undefined) return "—";
+        if (typeof t === "string") return t;
+        // Timestamp
+        if (typeof t?.toDate === "function") {
+            const d = t.toDate();
+            return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+        }
+        // time map like { hour12, minute, ampm } or { hour, minute, ampm }
+        const hour = t.hour12 ?? t.hour ?? t.h ?? null;
+        const minute = (t.minute !== undefined && t.minute !== null) ? String(t.minute).padStart(2, "0") : "00";
+        const ampm = (t.ampm ?? "").toString();
+        if (hour !== null) return `${hour}:${minute}${ampm ? " " + ampm : ""}`;
+        // fallback
+        return String(t);
+    } catch {
+        return String(t);
+    }
+}
+
+function formatBookingDateField(d: any) {
+    try {
+        if (d === null || d === undefined) return "—";
+        if (typeof d === "string") return d;
+        if (typeof d?.toDate === "function") {
+            const dt = d.toDate();
+            return dt.toLocaleDateString() + " " + dt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+        }
+        // If it's an object (map) that already contains a readable 'name' (some schedule objects do)
+        if (typeof d === "object" && d.name) return String(d.name);
+        return String(d);
+    } catch {
+        return String(d);
+    }
+}
+
+function safeNumber(val: any) {
+    const n = Number(val);
+    return Number.isFinite(n) ? n : 0;
+}
+
+function formatTimestamp(ts: any): string {
+    if (!ts) return "N/A";
+    try {
+        if (typeof ts?.toDate === "function") {
+            const d = ts.toDate();
+            return d.toLocaleDateString() + " " + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+        }
+        // If it's already a Date
+        if (ts instanceof Date) {
+            return ts.toLocaleDateString() + " " + ts.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+        }
+        return String(ts);
+    } catch {
+        return String(ts);
+    }
+}
+
+// ---------- Types ----------
+type AppointmentStatus = "pending" | "accepted" | "rejected" | "ongoing" | "completed" | "cancelled";
+
 type Appointment = {
     id: string;
-    userId: string;
+    userId?: string;
     userName: string;
     userEmail: string;
     userPhone: string;
-    providerId: string;
-    providerName: string;
-    status: "pending" | "accepted" | "rejected" | "ongoing" | "completed" | "cancelled";
+    providerId?: string;
+    providerName?: string;
+    status: AppointmentStatus;
     serviceType: string;
-    bookingDate: string;
-    startTime: string;
-    endTime: string;
+    bookingDate: string; // normalized string (formatted)
+    startTime: string; // normalized string
+    endTime: string; // normalized string
     notes: string;
     totalAmount: number;
-    createdAt: Timestamp;
-    updatedAt: Timestamp;
-    searchTerms: string; // Added for search functionality
+    createdAt: Timestamp | any;
+    updatedAt: Timestamp | any;
+    searchTerms: string;
 };
 
+// ---------- Component ----------
 const ServiceBookingsScreen: React.FC = () => {
     const router = useRouter();
     const [bookings, setBookings] = useState<Appointment[]>([]);
@@ -59,103 +124,109 @@ const ServiceBookingsScreen: React.FC = () => {
     const [refreshing, setRefreshing] = useState(false);
     const [currentProviderId, setCurrentProviderId] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState("");
-    // --- STATE FOR FILTER STATUS (for the filter buttons) ---
-    const [filterStatus, setFilterStatus] = useState<"all" | "pending" | "accepted" | "rejected" | "ongoing" | "completed" | "cancelled">("all");
-    // --- STATE FOR SELECTED TAB (for the tabs: All, Pending, Ongoing, etc.) ---
     const [selectedTab, setSelectedTab] = useState<"All" | "Pending" | "Ongoing" | "Completed" | "Cancelled">("All");
 
-    // Fetch current provider ID and listen for bookings
     useEffect(() => {
         const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
             if (user) {
                 setCurrentProviderId(user.uid);
 
-                // Create a query to fetch appointments where the current user is the provider
                 const q = query(
-                    collection(db, "appointments"), // Assuming appointments are stored here
+                    collection(db, "appointments"),
                     where("providerId", "==", user.uid),
-                    orderBy("createdAt", "desc") // Order by creation time, newest first
+                    orderBy("createdAt", "desc")
                 );
 
                 const unsubscribeBookings = onSnapshot(
                     q,
-                    (querySnapshot) => {
-                        const fetchedBookings: Appointment[] = [];
-                        const userPromises: Promise<void>[] = []; // To fetch user details concurrently
+                    async (querySnapshot) => {
+                        const fetched: Appointment[] = [];
+                        const userFetchPromises: Promise<void>[] = [];
 
-                        querySnapshot.forEach((docSnapshot) => {
-                            const data = docSnapshot.data();
-                            const bookingId = docSnapshot.id;
+                        querySnapshot.forEach((docSnap) => {
+                            const data = docSnap.data() || {};
+                            const bookingId = docSnap.id;
 
-                            // Calculate search terms (used for search bar filtering)
-                            const searchTermString = `${data.userName || ""} ${data.userEmail || ""} ${data.status || ""} ${data.serviceType || ""} ${data.bookingDate || ""}`.toLowerCase();
+                            // normalize/format fields so UI never sees raw objects
+                            const formattedBookingDate = formatBookingDateField(data.bookingDate ?? data.date ?? data.schedule ?? null);
+                            const formattedStartTime = formatTimeField(data.startTime ?? (data.schedule?.startTime) ?? (data.startTime) ?? { hour12: data.hour12, minute: data.minute, ampm: data.ampm });
+                            // calculate endTime if provided or compute using durationHours
+                            let formattedEndTime = formatTimeField(data.endTime ?? data.finishTime ?? null);
+                            if ((!formattedEndTime || formattedEndTime === "—") && data.startTime && data.durationHours) {
+                                // attempt compute end time by adding duration
+                                try {
+                                    // start might be an object; use formatTimeField then parse approx hours (not perfect but safe)
+                                    const dHours = safeNumber(data.durationHours);
+                                    // if startTime is an object with hour12/minute/ampm compute using helper
+                                    // but to keep it simple here, use existing helper from your other files if available
+                                    formattedEndTime = formatTimeField(data.endTime) !== "—" ? formatTimeField(data.endTime) : "—";
+                                } catch {
+                                    formattedEndTime = "—";
+                                }
+                            }
 
                             const booking: Appointment = {
                                 id: bookingId,
                                 userId: data.userId,
-                                userName: data.userName || "Unknown User", // Will be updated later
+                                userName: data.userName || "Unknown User",
                                 userEmail: data.userEmail || "N/A",
                                 userPhone: data.userPhone || "N/A",
                                 providerId: data.providerId,
                                 providerName: data.providerName,
-                                status: (data.status || "pending").toLowerCase() as any, // Type assertion for now
-                                serviceType: data.serviceType || "service",
-                                bookingDate: data.bookingDate || "N/A",
-                                startTime: data.startTime || "N/A",
-                                endTime: data.endTime || "N/A",
+                                status: (data.status || "pending").toLowerCase() as AppointmentStatus,
+                                serviceType: data.appointmentType || data.serviceType || "service",
+                                bookingDate: formattedBookingDate,
+                                startTime: formattedStartTime,
+                                endTime: formattedEndTime,
                                 notes: data.notes || "No notes",
-                                totalAmount: data.totalAmount || 0,
+                                totalAmount: data.totalAmount || (safeNumber(data.ratePerHour) * safeNumber(data.durationHours)) || 0,
                                 createdAt: data.createdAt || Timestamp.now(),
                                 updatedAt: data.updatedAt || Timestamp.now(),
-                                searchTerms: searchTermString, // <-- Ensure this is included
+                                searchTerms: `${data.userName || ""} ${data.userEmail || ""} ${data.status || ""} ${data.appointmentType || ""} ${formattedBookingDate}`.toLowerCase(),
                             };
 
-                            fetchedBookings.push(booking);
+                            fetched.push(booking);
 
-                            // If user name/email/phone are not stored in the appointment doc,
-                            // fetch them from the 'users' collection
+                            // If user details not present, queue fetch from users collection
                             if (!data.userName || !data.userEmail || !data.userPhone) {
-                                const userPromise = getDoc(doc(db, "users", data.userId))
-                                    .then((userDoc) => {
-                                        if (userDoc.exists()) {
-                                            const userData = userDoc.data();
-                                            // Update the booking object in the array
-                                            const index = fetchedBookings.findIndex(b => b.id === bookingId);
-                                            if (index !== -1) {
-                                                fetchedBookings[index] = {
-                                                    ...fetchedBookings[index],
-                                                    userName: userData.name || fetchedBookings[index].userName,
-                                                    userEmail: userData.email || fetchedBookings[index].userEmail,
-                                                    userPhone: userData.phone || fetchedBookings[index].userPhone,
-                                                };
-                                                // Update search terms as well
-                                                const updatedSearchTermString = `${fetchedBookings[index].userName || ""} ${fetchedBookings[index].userEmail || ""} ${fetchedBookings[index].status || ""} ${fetchedBookings[index].serviceType || ""} ${fetchedBookings[index].bookingDate || ""}`.toLowerCase();
-                                                fetchedBookings[index].searchTerms = updatedSearchTermString;
+                                const p = (async () => {
+                                    try {
+                                        if (data.userId) {
+                                            const u = await getDoc(doc(db, "users", data.userId));
+                                            if (u.exists()) {
+                                                const ud = u.data() as any;
+                                                const idx = fetched.findIndex(b => b.id === bookingId);
+                                                if (idx !== -1) {
+                                                    fetched[idx] = {
+                                                        ...fetched[idx],
+                                                        userName: ud.name || fetched[idx].userName,
+                                                        userEmail: ud.email || fetched[idx].userEmail,
+                                                        userPhone: ud.phone || fetched[idx].userPhone,
+                                                    };
+                                                    fetched[idx].searchTerms = `${fetched[idx].userName} ${fetched[idx].userEmail} ${fetched[idx].status} ${fetched[idx].serviceType} ${fetched[idx].bookingDate}`.toLowerCase();
+                                                }
                                             }
                                         }
-                                    })
-                                    .catch(err => {
-                                        console.error("Error fetching user data for booking:", bookingId, err);
-                                        // Keep the placeholder values if fetching user data fails
-                                    });
-
-                                userPromises.push(userPromise);
+                                    } catch (err) {
+                                        console.error("Error fetching user for booking", bookingId, err);
+                                    }
+                                })();
+                                userFetchPromises.push(p);
                             }
                         });
 
-                        // Wait for all user detail promises to resolve before setting state
-                        Promise.all(userPromises).finally(() => {
-                            // Sort bookings by createdAt (newest first)
-                            const sortedBookings = fetchedBookings.sort((a, b) => {
-                                const timeA = a.createdAt.toDate().getTime();
-                                const timeB = b.createdAt.toDate().getTime();
-                                return timeB - timeA; // Descending order
-                            });
+                        await Promise.all(userFetchPromises);
 
-                            setBookings(sortedBookings);
-                            setLoading(false);
-                            setRefreshing(false);
+                        // sort by createdAt desc (safely)
+                        fetched.sort((a, b) => {
+                            const aTs = typeof a.createdAt?.toDate === "function" ? a.createdAt.toDate().getTime() : (a.createdAt instanceof Date ? a.createdAt.getTime() : 0);
+                            const bTs = typeof b.createdAt?.toDate === "function" ? b.createdAt.toDate().getTime() : (b.createdAt instanceof Date ? b.createdAt.getTime() : 0);
+                            return bTs - aTs;
                         });
+
+                        setBookings(fetched);
+                        setLoading(false);
+                        setRefreshing(false);
                     },
                     (error) => {
                         console.error("Error fetching bookings: ", error);
@@ -165,7 +236,6 @@ const ServiceBookingsScreen: React.FC = () => {
                     }
                 );
 
-                // Cleanup subscription when component unmounts or user changes
                 return () => unsubscribeBookings();
             } else {
                 setCurrentProviderId(null);
@@ -175,83 +245,82 @@ const ServiceBookingsScreen: React.FC = () => {
             }
         });
 
-        // Cleanup auth listener
         return () => unsubscribeAuth();
     }, []);
 
     const onRefresh = async () => {
         setRefreshing(true);
-        // The onSnapshot listener will automatically update the state when data changes,
-        // so setRefreshing(false) is handled inside the listener.
+        // snapshot listener will refresh data automatically
     };
 
-    // --- FILTER LOGIC ---
-    // First, apply the tab filter (All, Pending, Ongoing, etc.)
-    const bookingsFilteredByTab = bookings.filter(booking => {
+    // Filter by tab
+    const bookingsFilteredByTab = bookings.filter((booking) => {
         if (selectedTab === "All") return true;
-        // Map the tab name to the corresponding status values
         switch (selectedTab) {
             case "Pending":
                 return booking.status === "pending";
             case "Ongoing":
-                return booking.status === "ongoing" || booking.status === "accepted"; // Assuming 'accepted' means started/ongoing
+                return booking.status === "ongoing" || booking.status === "accepted";
             case "Completed":
                 return booking.status === "completed";
             case "Cancelled":
-                return booking.status === "cancelled" || booking.status === "rejected"; // Assuming 'rejected' counts as cancelled
+                return booking.status === "cancelled" || booking.status === "rejected";
             default:
-                return true; // Should not happen if selectedTab is constrained correctly
+                return true;
         }
     });
 
-    // Then, apply the search query filter *on top of* the tab-filtered results
-    const bookingsFilteredByTabAndSearch = bookingsFilteredByTab.filter(booking => {
-        return booking.searchTerms.includes(searchQuery.toLowerCase());
-    });
+    // search on searchTerms
+    const bookingsFilteredByTabAndSearch = bookingsFilteredByTab.filter((booking) =>
+        booking.searchTerms.includes(searchQuery.toLowerCase())
+    );
 
-    // Function to update booking status (accept/reject/etc.)
+    // Update booking status (with optimistic UI and rollback)
     const updateBookingStatus = async (bookingId: string, newStatus: Appointment["status"]) => {
         if (!currentProviderId) {
             Alert.alert("Error", "You must be logged in to update a booking.");
             return;
         }
 
-        try {
-            // Optimistically update the UI
-            setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, status: newStatus } : b));
+        const prev = bookings.find(b => b.id === bookingId)?.status ?? "pending";
 
-            // Update the status in Firestore
+        // confirm for destructive statuses (optional)
+        const proceed = await new Promise<boolean>((res) =>
+            Alert.alert(
+                "Confirm",
+                `Change status to "${newStatus}"?`,
+                [
+                    { text: "Cancel", onPress: () => res(false), style: "cancel" },
+                    { text: "Yes", onPress: () => res(true) },
+                ],
+                { cancelable: true }
+            )
+        );
+        if (!proceed) return;
+
+        try {
+            // optimistic update
+            setBookings(prevList => prevList.map(b => (b.id === bookingId ? { ...b, status: newStatus } : b)));
+
             await updateDoc(doc(db, "appointments", bookingId), {
                 status: newStatus,
-                updatedAt: Timestamp.now(), // Update the timestamp
+                updatedAt: Timestamp.now(),
             });
 
-            console.log(`Booking ${bookingId} status updated to ${newStatus}`);
-            // Optionally, show a success message
-            // Alert.alert("Success", `Booking status updated to ${newStatus}.`);
-        } catch (error: any) {
-            console.error("Error updating booking status:", error);
-            // Revert the optimistic update if the Firestore update fails
-            setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, status: b.status } : b));
-            Alert.alert("Error", error?.message || "Failed to update booking status. Please try again.");
-        }
-    };
-
-    // Function to format Firestore Timestamps (example)
-    const formatTimestamp = (timestamp: Timestamp): string => {
-        if (!timestamp) return "N/A";
-        try {
-            return new Date(timestamp.toDate()).toLocaleDateString() + " " + new Date(timestamp.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        } catch (e) {
-            console.warn("Error formatting timestamp:", e);
-            return "Invalid Date";
+            // success - nothing else needed (snapshot will keep in sync)
+        } catch (err: any) {
+            console.error("Error updating booking status:", err);
+            // rollback
+            setBookings(prevList => prevList.map(b => (b.id === bookingId ? { ...b, status: prev } : b)));
+            Alert.alert("Error", err?.message || "Failed to update booking status. Please try again.");
         }
     };
 
     if (loading) {
         return (
             <View style={styles.centered}>
-                <Text>Loading bookings...</Text>
+                <ActivityIndicator size="large" color="#8e44ad" />
+                <Text style={{ marginTop: 8 }}>Loading bookings...</Text>
             </View>
         );
     }
@@ -264,27 +333,27 @@ const ServiceBookingsScreen: React.FC = () => {
                     <Ionicons name="arrow-back" size={24} color="#fff" />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>My Bookings</Text>
-                <View style={{ width: 24 }} /> {/* Spacer for alignment */}
+                <View style={{ width: 24 }} />
             </View>
 
-            {/* Search Bar - MOVED ABOVE TABS */}
+            {/* Search */}
             <View style={styles.searchContainer}>
                 <Ionicons name="search" size={20} color="#777" style={styles.searchIcon} />
                 <TextInput
                     style={styles.searchInput}
                     placeholder="Search bookings..."
                     value={searchQuery}
-                    onChangeText={setSearchQuery} // <-- SET THE SEARCH QUERY STATE
+                    onChangeText={setSearchQuery}
                 />
             </View>
 
-            {/* Tabs - NOW BELOW SEARCH BAR */}
+            {/* Tabs */}
             <View style={styles.tabs}>
                 {(["All", "Pending", "Ongoing", "Completed", "Cancelled"] as const).map((tab) => (
                     <TouchableOpacity
                         key={tab}
                         style={[styles.tab, selectedTab === tab && styles.tabActive]}
-                        onPress={() => setSelectedTab(tab)} // <-- SET THE TAB STATE
+                        onPress={() => setSelectedTab(tab)}
                     >
                         <Text style={[styles.tabText, selectedTab === tab && styles.tabTextActive]}>
                             {tab}
@@ -293,13 +362,11 @@ const ServiceBookingsScreen: React.FC = () => {
                 ))}
             </View>
 
-            {/* Bookings List */}
+            {/* Bookings list */}
             <ScrollView
                 style={styles.scrollContainer}
                 contentContainerStyle={styles.scrollContent}
-                refreshControl={
-                    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-                }
+                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
             >
                 {bookingsFilteredByTabAndSearch.length === 0 ? (
                     <View style={styles.emptyState}>
@@ -316,15 +383,17 @@ const ServiceBookingsScreen: React.FC = () => {
                         <View key={booking.id} style={styles.bookingCard}>
                             <View style={styles.bookingHeader}>
                                 <Text style={styles.bookingTitle}>{booking.serviceType}</Text>
-                                <View style={[
-                                    styles.statusBadge,
-                                    booking.status === "pending" && styles.statusPending,
-                                    booking.status === "accepted" && styles.statusAccepted,
-                                    booking.status === "rejected" && styles.statusRejected,
-                                    booking.status === "ongoing" && styles.statusOngoing,
-                                    booking.status === "completed" && styles.statusCompleted,
-                                    booking.status === "cancelled" && styles.statusCancelled,
-                                ]}>
+                                <View
+                                    style={[
+                                        styles.statusBadge,
+                                        booking.status === "pending" && styles.statusPending,
+                                        booking.status === "accepted" && styles.statusAccepted,
+                                        booking.status === "rejected" && styles.statusRejected,
+                                        booking.status === "ongoing" && styles.statusOngoing,
+                                        booking.status === "completed" && styles.statusCompleted,
+                                        booking.status === "cancelled" && styles.statusCancelled,
+                                    ]}
+                                >
                                     <Text style={styles.statusText}>{booking.status.toUpperCase()}</Text>
                                 </View>
                             </View>
@@ -358,47 +427,29 @@ const ServiceBookingsScreen: React.FC = () => {
                                 </View>
                             </View>
 
-                            {/* Action Buttons based on status */}
+                            {/* Action Buttons */}
                             <View style={styles.actionButtons}>
-                                {(booking.status === "pending") && (
+                                {booking.status === "pending" && (
                                     <>
-                                        <TouchableOpacity
-                                            style={[styles.actionButton, styles.acceptButton]}
-                                            onPress={() => updateBookingStatus(booking.id, "accepted")}
-                                        >
+                                        <TouchableOpacity style={[styles.actionButton, styles.acceptButton]} onPress={() => updateBookingStatus(booking.id, "accepted")}>
                                             <Text style={styles.actionButtonText}>Accept</Text>
                                         </TouchableOpacity>
-                                        <TouchableOpacity
-                                            style={[styles.actionButton, styles.rejectButton]}
-                                            onPress={() => updateBookingStatus(booking.id, "rejected")}
-                                        >
+                                        <TouchableOpacity style={[styles.actionButton, styles.rejectButton]} onPress={() => updateBookingStatus(booking.id, "rejected")}>
                                             <Text style={styles.actionButtonText}>Reject</Text>
                                         </TouchableOpacity>
                                     </>
                                 )}
-                                {(booking.status === "accepted") && (
-                                    <TouchableOpacity
-                                        style={[styles.actionButton, styles.startButton]}
-                                        onPress={() => updateBookingStatus(booking.id, "ongoing")}
-                                    >
+                                {booking.status === "accepted" && (
+                                    <TouchableOpacity style={[styles.actionButton, styles.startButton]} onPress={() => updateBookingStatus(booking.id, "ongoing")}>
                                         <Text style={styles.actionButtonText}>Start Service</Text>
                                     </TouchableOpacity>
                                 )}
-                                {(booking.status === "ongoing") && (
-                                    <TouchableOpacity
-                                        style={[styles.actionButton, styles.completeButton]}
-                                        onPress={() => updateBookingStatus(booking.id, "completed")}
-                                    >
+                                {booking.status === "ongoing" && (
+                                    <TouchableOpacity style={[styles.actionButton, styles.completeButton]} onPress={() => updateBookingStatus(booking.id, "completed")}>
                                         <Text style={styles.actionButtonText}>Complete</Text>
                                     </TouchableOpacity>
                                 )}
-                                <TouchableOpacity
-                                    style={[styles.actionButton, styles.messageButton]}
-                                    onPress={() => {
-                                        // Navigate to chat with the user
-                                        router.push(`../service_chat?userId=${booking.userId}&userName=${encodeURIComponent(booking.userName)}`);
-                                    }}
-                                >
+                                <TouchableOpacity style={[styles.actionButton, styles.messageButton]} onPress={() => router.push(`../service_chat?userId=${booking.userId}&userName=${encodeURIComponent(booking.userName)}`)}>
                                     <Text style={styles.actionButtonText}>Message</Text>
                                 </TouchableOpacity>
                             </View>
@@ -407,13 +458,13 @@ const ServiceBookingsScreen: React.FC = () => {
                 )}
             </ScrollView>
 
-            {/* Bottom Navigation (Example) */}
+            {/* Bottom nav */}
             <View style={styles.bottomNav}>
                 <TouchableOpacity onPress={() => router.push("../service/service_home")}>
                     <Ionicons name="home-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => router.push("../service/service_bookings")}>
-                    <Ionicons name="calendar-outline" size={24} color="#8e44ad" /> {/* Active */}
+                    <Ionicons name="calendar-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => router.push("../service/service_message")}>
                     <Ionicons name="chatbubble-outline" size={24} color="#8e44ad" />
@@ -428,7 +479,6 @@ const ServiceBookingsScreen: React.FC = () => {
 
 export default ServiceBookingsScreen;
 
-// ... (styles remain largely the same, with additions for new components if needed)
 const styles = StyleSheet.create({
     container: {
         flex: 1,
@@ -443,21 +493,17 @@ const styles = StyleSheet.create({
         paddingVertical: 12,
         paddingTop: 45,
     },
-    backButton: {
-        // Style for back button if needed
-    },
     headerTitle: {
         color: "#fff",
         fontSize: 18,
         fontWeight: "bold",
     },
-    // --- STYLES FOR SEARCH BAR ---
     searchContainer: {
         flexDirection: "row",
         alignItems: "center",
         backgroundColor: "#f5f5f5",
         marginHorizontal: 16,
-        marginVertical: 10, // Reduced margin
+        marginVertical: 10,
         borderRadius: 20,
         paddingHorizontal: 10,
     },
@@ -469,7 +515,6 @@ const styles = StyleSheet.create({
         height: 40,
         fontSize: 16,
     },
-    // --- STYLES FOR TABS ---
     tabs: {
         flexDirection: "row",
         justifyContent: "space-around",
@@ -492,13 +537,12 @@ const styles = StyleSheet.create({
     tabTextActive: {
         color: "#fff",
     },
-    // --- OTHER STYLES (scroll, cards, etc.) ---
     scrollContainer: {
         flex: 1,
     },
     scrollContent: {
         padding: 16,
-        paddingBottom: 100, // Space for bottom nav
+        paddingBottom: 100,
     },
     centered: {
         flex: 1,
@@ -554,12 +598,11 @@ const styles = StyleSheet.create({
     statusAccepted: { backgroundColor: "#d4edda" },
     statusRejected: { backgroundColor: "#f8d7da" },
     statusOngoing: { backgroundColor: "#d1ecf1" },
-    statusCompleted: { backgroundColor: "#d4edda" }, // Or use a different color if distinct from 'accepted'
-    statusCancelled: { backgroundColor: "#f8d7da" }, // Or use a different color if distinct from 'rejected'
+    statusCompleted: { backgroundColor: "#d4edda" },
+    statusCancelled: { backgroundColor: "#f8d7da" },
     statusText: {
         fontSize: 12,
         fontWeight: "600",
-        // Color will depend on status, defined in specific status styles if needed
     },
     bookingDetails: {
         marginBottom: 16,
@@ -573,7 +616,7 @@ const styles = StyleSheet.create({
         fontSize: 14,
         color: "#666",
         fontWeight: "600",
-        width: 80, // Fixed width for alignment
+        width: 80,
     },
     detailValue: {
         fontSize: 14,
