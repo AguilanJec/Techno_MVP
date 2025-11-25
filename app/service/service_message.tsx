@@ -363,7 +363,7 @@ export default function ServiceMessageScreen() {
                 <TouchableOpacity onPress={() => router.push("../service/service_message")}>
                     <Ionicons name="chatbubble-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => router.push("../service/service_profile")}>
+                <TouchableOpacity onPress={() => router.push("../service/service_account")}>
                     <Ionicons name="person-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
             </View>
