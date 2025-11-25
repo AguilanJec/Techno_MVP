@@ -76,74 +76,74 @@ export default function ChatbotScreen() {
     const getAIResponse = (userMessage: string): string => {
         const msg = userMessage.toLowerCase().trim();
 
-        // 1. Greetings
-        if (/(hello|hi|hey|good morning|good afternoon|good evening)/i.test(msg)) {
-            return "Hello! I'm Mavi, your virtual assistant. How can I help you today?";
-        }
-
-        // 2. Thanks / Gratitude
-        if (/(thank you|thanks|ty|thank u|gracias|salamat)/i.test(msg)) {
+        // 2. Thanks / Gratitude - moved up
+        if (/\b(thank you|thanks|ty|thank u|gracias|salamat)\b/i.test(msg)) {
             return "You're very welcome! I'm always here whenever you need support. Just ask anytime";
         }
 
-        // 3. Special Needs & Disabilities (Most Important)
-        if (/(special needs|special child|autism|asd|adhd|down syndrome|developmental delay|speech delay|sensory|disability|inclusive|handle special)/i.test(msg)) {
-            return "Every child is unique and deserves the best support. Hiraya is fully committed to helping families with children who have special needs.\n\nHere’s how we can help:\n\n• Trained caregivers experienced in autism, ADHD, Down syndrome, sensory processing, and more\n• One-on-one consultations with child development specialists\n• Inclusive childcare with low ratios & sensory-friendly spaces\n• Personalized care plans and therapy recommendations\n• Parent support groups & workshops\n• Home activity guides and visual schedules\n\nYou’re doing an amazing job. Would you like to book a free consultation or get specific resources for your child?";
+        // 3. Special Needs & Disabilities
+        if (/\b(special needs|special child|autism|asd|adhd|down syndrome|developmental delay|speech delay|sensory|disability|inclusive|handle special)\b/i.test(msg)) {
+            return "Every child is unique and deserves the best support. Hiraya is fully committed to helping families with children who have special needs.\n\nHere's how we can help:\n\n• Trained caregivers experienced in autism, ADHD, Down syndrome, sensory processing, and more\n• One-on-one consultations with child development specialists\n• Inclusive childcare with low ratios & sensory-friendly spaces\n• Personalized care plans and therapy recommendations\n• Parent support groups & workshops\n• Home activity guides and visual schedules\n\nYou're doing an amazing job. Would you like to book a free consultation or get specific resources for your child?";
         }
 
         // 4. Tantrums / Meltdowns
-        if (/(tantrum|meltdown|crying|screaming|angry|out of control|throwing things)/i.test(msg)) {
-            return "Tantrums are tough, but very normal! Here are quick tips:\n\n• Stay calm — your calm helps them calm\n• Name their feeling: “I see you’re really upset because…”\n• Offer a safe space or hug (if they want it)\n• Use a calm-down corner with soft toys or fidget items\n• After they calm: talk about feelings and better choices\n\nWe also have a free “Calm Down Kit” PDF in the Resources section. Want me to send you the link?";
+        if (/\b(tantrum|meltdown|crying|screaming|angry|out of control|throwing things|hitting)\b/i.test(msg)) {
+            return "Tantrums are tough, but very normal! Here are quick tips:\n\n• Stay calm — your calm helps them calm\n• Name their feeling: 'I see you're really upset because…'\n• Offer a safe space or hug (if they want it)\n• Use a calm-down corner with soft toys or fidget items\n• After they calm: talk about feelings and better choices\n\nWe also have a free 'Calm Down Kit' PDF in the Resources section. Want me to send you the link?";
         }
 
-        // 5. Screen Time / Too Much Gadget
-        if (/(screen time|ipad|phone|tablet|addicted to gadget|too much youtube)/i.test(msg)) {
+        // 5. Biting / Hitting / Aggressive Behavior - more specific
+        if (/\b(bite|biting|hitting|hit|aggressive|hurts others|push|kick)\b/i.test(msg)) {
+            return "This behavior is usually about big feelings or wanting attention.\n\nWhat helps:\n• Stay calm & stop the action safely\n• Say: 'We don't hit. Hands are for helping.'\n• Teach words: 'You're angry. Say: I'm mad!'\n• Give positive attention for gentle hands\n• Short time-in (hug & breathe together)\n\nWe run monthly workshops on Positive Discipline. Want to join the next one?";
+        }
+
+        // 6. Screen Time / Too Much Gadget
+        if (/\b(screen time|ipad|phone|tablet|addicted to gadget|too much youtube)\b/i.test(msg)) {
             return "Many parents worry about screen time — you're not alone!\n\nHealthy limits:\n• Under 2 years: almost none (except video calls)\n• 2–5 years: max 1 hour/day with parent\n• 5+: consistent rules + balanced activities\n\nTry these instead:\n• Outdoor playdates\n• Art & crafts\n• Reading together\n• Sensory bins (rice, water beads)\n\nWe have a 7-Day Screen Detox Challenge for families! Shall I guide you to it?";
         }
 
-        // 6. Sleep Problems
-        if (/(sleep|bedtime|won’t sleep|night waking|nightmare|afraid of dark)/i.test(msg)) {
+        // 7. Sleep Problems
+        if (/\b(sleep|bedtime|won't sleep|night waking|nightmare|afraid of dark)\b/i.test(msg)) {
             return "Sleep struggles are so common! Here are proven tips:\n\n• Consistent bedtime routine (bath → book → bed)\n• No screens 1 hour before bed\n• Dim lights & white noise\n• Comfort item (blanket, stuffed toy)\n• Reward chart for staying in bed\n\nWe offer a free Sleep Guide for ages 1–10 in the Resources tab. Would you like it?";
         }
 
-        // 7. Picky Eating / Won’t Eat Vegetables
-        if (/(picky eater|won’t eat|vegetable|food|refuse to eat|only eats junk)/i.test(msg)) {
-            return "Picky eating is super common up to age 7!\n\nTips that work:\n• Offer new food 10–15 times (no pressure)\n• Make food fun (smiley faces, colorful plates)\n• Let them help cook\n• Eat together as family — no separate meals\n• One-bite rule (just try one small bite)\n\nWe have a “Fun with Food” e-book with recipes kids love. Want it?";
-        }
-
-        // 8. Biting / Hitting / Aggressive Behavior
-        if (/(bite|hitting|aggressive|hurts others|push|kick)/i.test(msg)) {
-            return "This behavior is usually about big feelings or wanting attention.\n\nWhat helps:\n• Stay calm & stop the action safely\n• Say: “We don’t hit. Hands are for helping.”\n• Teach words: “You’re angry. Say: I’m mad!”\n• Give positive attention for gentle hands\n• Short time-in (hug & breathe together)\n\nWe run monthly workshops on Positive Discipline. Want to join the next one?";
+        // 8. Picky Eating / Won't Eat Vegetables
+        if (/\b(picky eater|won't eat|vegetable|food|refuse to eat|only eats junk)\b/i.test(msg)) {
+            return "Picky eating is super common up to age 7!\n\nTips that work:\n• Offer new food 10–15 times (no pressure)\n• Make food fun (smiley faces, colorful plates)\n• Let them help cook\n• Eat together as family — no separate meals\n• One-bite rule (just try one small bite)\n\nWe have a 'Fun with Food' e-book with recipes kids love. Want it?";
         }
 
         // 9. School Readiness / Separation Anxiety
-        if (/(school|big school|kindergarten|afraid to go|separation anxiety|cry when leave)/i.test(msg)) {
-            return "Starting school is a big milestone!\n\nTo help:\n• Visit the school together beforehand\n• Practice short goodbyes\n• Create a goodbye ritual (special hug + kiss)\n• Photo of family in their bag\n• Read books like “The Kissing Hand”\n\nWe have a School Readiness Checklist & Storybooks in the app. Shall I show you?";
+        if (/\b(school|big school|kindergarten|afraid to go|separation anxiety|cry when leave)\b/i.test(msg)) {
+            return "Starting school is a big milestone!\n\nTo help:\n• Visit the school together beforehand\n• Practice short goodbyes\n• Create a goodbye ritual (special hug + kiss)\n• Photo of family in their bag\n• Read books like 'The Kissing Hand'\n\nWe have a School Readiness Checklist & Storybooks in the app. Shall I show you?";
         }
 
         // 10. Potty Training
-        if (/(potty training|toilet|diaper|pee|poop|accident)/i.test(msg)) {
+        if (/\b(potty training|toilet|diaper|pee|poop|accident)\b/i.test(msg)) {
             return "Ready for potty training?\n\nSigns of readiness:\n• Stays dry for 2+ hours\n• Tells you when diaper is wet/dirty\n• Can pull pants up/down\n\nTips:\n• Use fun underwear with favorite characters\n• Reward chart with stickers\n• No punishment for accidents\n• Celebrate every success!\n\nWe have a free Potty Training Guide + Reward Chart printable. Want it?";
         }
 
         // 11. Sibling Fighting / Jealousy
-        if (/(sibling|fighting|jealous|new baby|brother|sister|rivals)/i.test(msg)) {
-            return "Sibling rivalry is normal, but peaceful homes are possible!\n\nTry:\n• Special 1-on-1 time with each child\n• No comparison (“You’re smarter” → hurts feelings)\n• Teach conflict words: “Please stop, I don’t like that”\n• Family meetings to solve problems together\n\nWe have a “Peaceful Siblings” workshop every month. Interested?";
+        if (/\b(sibling|fighting|jealous|new baby|brother|sister|rivals)\b/i.test(msg)) {
+            return "Sibling rivalry is normal, but peaceful homes are possible!\n\nTry:\n• Special 1-on-1 time with each child\n• No comparison ('You're smarter' → hurts feelings)\n• Teach conflict words: 'Please stop, I don't like that'\n• Family meetings to solve problems together\n\nWe have a 'Peaceful Siblings' workshop every month. Interested?";
         }
 
         // 12. General Parenting Support
-        if (/(tired|exhausted|overwhelmed|mom guilt|hard|struggling|need help)/i.test(msg)) {
-            return "Parenting is the hardest, most important job — and it’s okay to feel tired sometimes. You are doing better than you think.\n\nTake a deep breath. You’ve got this.\n\nWe have a free Parent Support Community where moms & dads share tips and encouragement daily. Would you like to join? Or would you like a list of self-care ideas for busy parents?";
+        if (/\b(tired|exhausted|overwhelmed|mom guilt|hard|struggling|need help)\b/i.test(msg)) {
+            return "Parenting is the hardest, most important job — and it's okay to feel tired sometimes. You are doing better than you think.\n\nTake a deep breath. You've got this.\n\nWe have a free Parent Support Community where moms & dads share tips and encouragement daily. Would you like to join? Or would you like a list of self-care ideas for busy parents?";
         }
 
         // 13. Services Overview
-        if (/(service|what do you offer|hiraya|what is hiraya)/i.test(msg)) {
+        if (/\b(service|what do you offer|hiraya|what is hiraya)\b/i.test(msg)) {
             return "Hiraya offers loving support for every family:\n\n• Trusted childcare & babysitting\n• Special needs & inclusive care\n• Parenting workshops & support groups\n• Child development consultations\n• Emergency & last-minute care\n• Fun holiday programs\n\nWhich service interests you most?";
         }
 
         // 14. Booking Childcare
-        if (/(book|childcare|babysitter|care|need sitter)/i.test(msg)) {
-            return "I can help you book trusted childcare in seconds!\n\nJust go to the “Booking” tab, choose date/time, and select the type of care you need (regular, special needs, overnight, etc.).\n\nNeed help choosing the right caregiver? Tell me your child’s age and needs — I’ll recommend the best matches!";
+        if (/\b(book|childcare|babysitter|care|need sitter)\b/i.test(msg)) {
+            return "I can help you book trusted childcare in seconds!\n\nJust go to the 'Booking' tab, choose date/time, and select the type of care you need (regular, special needs, overnight, etc.).\n\nNeed help choosing the right caregiver? Tell me your child's age and needs — I'll recommend the best matches!";
+        }
+
+        // 1. Greetings - moved to LAST with more specific pattern
+        if (/^(hello|hi|hey|good morning|good afternoon|good evening)$/i.test(msg)) {
+            return "Hello! I'm Mavi, your virtual assistant. How can I help you today?";
         }
 
         // Default Fallback
