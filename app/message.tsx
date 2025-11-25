@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
     View,
     Text,
@@ -7,13 +7,22 @@ import {
     StyleSheet,
     SafeAreaView,
     FlatList,
-    ActivityIndicator
+    ActivityIndicator,
+    Image,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { collection, query, where, onSnapshot, orderBy, getDoc, doc as firestoreDoc } from "firebase/firestore";
+import {
+    collection,
+    query,
+    where,
+    onSnapshot,
+    orderBy,
+    getDoc,
+    doc as firestoreDoc,
+} from "firebase/firestore";
 import { db } from "../firebaseConfig";
-import { getAuth } from "firebase/auth";
+import { getAuth, onAuthStateChanged } from "firebase/auth";
 
 interface Conversation {
     id: string;
@@ -23,11 +32,16 @@ interface Conversation {
     lastMessageTime: any;
     unread: boolean;
     lastMessageSender: string;
+    otherUserId?: string;
+    otherUserName?: string;
+    otherUserPicture?: string | null; // data URI or remote URL
 }
 
-interface ProviderData {
-    name: string;
+interface UserData {
+    name?: string;
     email?: string;
+    phone?: string;
+    picture?: string;
 }
 
 export default function MessageScreen() {
@@ -37,19 +51,106 @@ export default function MessageScreen() {
     const [currentUser, setCurrentUser] = useState<any>(null);
     const [loading, setLoading] = useState(true);
 
+    // small cache to avoid repeated reads
+    const userCacheRef = React.useRef<Record<string, { name?: string; picture?: string | null }>>({});
+
     useEffect(() => {
         const auth = getAuth();
-        const user = auth.currentUser;
+        const unsub = onAuthStateChanged(auth, (user) => {
+            if (user) {
+                setCurrentUser(user);
+                setupConversationsListener(user.uid);
+            } else {
+                setCurrentUser(null);
+                setConversations([]);
+                setLoading(false);
+            }
+        });
 
-        if (user) {
-            setCurrentUser(user);
-            setupConversationsListener(user.uid);
-        } else {
-            setLoading(false);
-        }
+        return () => unsub();
     }, []);
 
-    const setupConversationsListener = (currentUserId: string) => {
+    // sanitize picture string stored in Firestore (base64, data:..., url(...), raw base64)
+    const sanitizePictureUri = useCallback((raw?: string | null) => {
+        if (!raw) return null;
+        let s = raw.trim();
+
+        // unwrap url(...) wrappers and surrounding quotes
+        const urlMatch = s.match(/^url\(["']?(.*?)["']?\)$/i);
+        if (urlMatch && urlMatch[1]) s = urlMatch[1];
+
+        // if it's an http(s) url, return as is
+        if (/^https?:\/\//i.test(s)) return s;
+
+        // if it's already a data URI (data:image/...), return as is
+        if (/^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(s)) return s;
+
+        // sometimes firestore might have "data:imag..." truncated - try to repair if possible
+        if (/^data:imag[e]*/i.test(s) && s.includes("base64,")) {
+            return s.replace(/^data:imag/, "data:image");
+        }
+
+        // raw base64 detection: JPEG header often starts with '/9j/' in base64, png has 'iVBOR'
+        if (/^(\/9j\/|iVBOR|R0lGOD)/.test(s)) {
+            return `data:image/jpeg;base64,${s}`;
+        }
+
+        // if it contains only base64 chars and is long, assume base64 jpeg
+        if (/^[A-Za-z0-9+/=\s]+$/.test(s) && s.length > 100) {
+            return `data:image/jpeg;base64,${s}`;
+        }
+
+        return null;
+    }, []);
+
+    // Try providers first (your picture field is in providers collection),
+    // then fallback to users collection.
+    const fetchUserDocWithFallback = useCallback(
+        async (id: string) => {
+            // consult cache first
+            const cache = userCacheRef.current[id];
+            if (cache) return cache;
+
+            try {
+                // try providers collection first (since picture field lives there)
+                const pDoc = await getDoc(firestoreDoc(db, "providers", id));
+                if (pDoc.exists()) {
+                    const pd = pDoc.data() as UserData;
+                    const name = pd?.name || pd?.email || "Provider";
+                    const picture = sanitizePictureUri(pd?.picture ?? null);
+                    const result = { name, picture: picture ?? null };
+                    userCacheRef.current[id] = result;
+                    return result;
+                }
+
+                // then try users collection
+                const uDoc = await getDoc(firestoreDoc(db, "users", id));
+                if (uDoc.exists()) {
+                    const d = uDoc.data() as UserData;
+                    const name = d?.name || d?.email || "Customer";
+                    const picture = sanitizePictureUri(d?.picture ?? null);
+                    const result = { name, picture: picture ?? null };
+                    userCacheRef.current[id] = result;
+                    return result;
+                }
+
+                // not found
+                const fallback = { name: "Customer", picture: null };
+                userCacheRef.current[id] = fallback;
+                return fallback;
+            } catch (err) {
+                console.error("fetchUserDocWithFallback error:", err);
+                const fallback = { name: "Customer", picture: null };
+                userCacheRef.current[id] = fallback;
+                return fallback;
+            }
+        },
+        [sanitizePictureUri]
+    );
+
+    const setupConversationsListener = async (currentUserId: string) => {
+        setLoading(true);
+
         try {
             const conversationsQuery = query(
                 collection(db, "conversations"),
@@ -57,40 +158,43 @@ export default function MessageScreen() {
                 orderBy("lastMessageTime", "desc")
             );
 
-            const unsubscribe = onSnapshot(conversationsQuery,
+            const unsubscribe = onSnapshot(
+                conversationsQuery,
                 async (snapshot) => {
-                    const conversationsData: Conversation[] = [];
+                    const convs: Conversation[] = [];
 
-                    for (const docSnap of snapshot.docs) {
+                    const fetchPromises = snapshot.docs.map(async (docSnap) => {
                         const data = docSnap.data();
-                        const otherUserId = data.participants.find((id: string) => id !== currentUserId);
+                        const participants: string[] = data.participants || [];
+                        const otherUserId = participants.find((id: string) => id !== currentUserId) || "";
 
-                        // Get provider name from providers collection
-                        let providerName = "Provider";
+                        let otherUserName = "Provider";
+                        let otherUserPicture: string | null = null;
+
                         if (otherUserId) {
-                            try {
-                                const providerDoc = await getDoc(firestoreDoc(db, "providers", otherUserId));
-                                if (providerDoc.exists()) {
-                                    const providerData = providerDoc.data() as ProviderData;
-                                    providerName = providerData.name || "Provider";
-                                }
-                            } catch (error) {
-                                console.error("Error fetching provider name:", error);
-                            }
+                            const u = await fetchUserDocWithFallback(otherUserId);
+                            otherUserName = u.name || otherUserName;
+                            otherUserPicture = u.picture ?? null;
                         }
 
-                        conversationsData.push({
+                        return {
                             id: docSnap.id,
-                            participants: data.participants || [],
-                            participantNames: [currentUser?.displayName || "User", providerName],
+                            participants,
+                            participantNames: [currentUser?.displayName || "User", otherUserName],
                             lastMessage: data.lastMessage || "No messages yet",
                             lastMessageTime: data.lastMessageTime,
                             unread: data.unread || false,
-                            lastMessageSender: data.lastMessageSender || ""
-                        } as Conversation);
-                    }
+                            lastMessageSender: data.lastMessageSender || "",
+                            otherUserId,
+                            otherUserName,
+                            otherUserPicture,
+                        } as Conversation;
+                    });
 
-                    setConversations(conversationsData);
+                    const results = await Promise.all(fetchPromises);
+                    convs.push(...results);
+
+                    setConversations(convs);
                     setLoading(false);
                 },
                 (error) => {
@@ -106,43 +210,31 @@ export default function MessageScreen() {
         }
     };
 
-    const filteredConversations = conversations.filter(conversation => {
+    const filteredConversations = conversations.filter((conversation) => {
         if (!searchQuery) return true;
 
-        const otherParticipantName = conversation.participantNames.find((name, index) =>
-            conversation.participants[index] !== currentUser?.uid
-        ) || "";
+        const otherParticipantName = conversation.otherUserName || conversation.participantNames[1] || "";
 
-        return otherParticipantName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            conversation.lastMessage.toLowerCase().includes(searchQuery.toLowerCase());
+        return (
+            otherParticipantName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            (conversation.lastMessage || "").toLowerCase().includes(searchQuery.toLowerCase())
+        );
     });
-
-    const getOtherUserName = (participants: string[], participantNames: string[]) => {
-        if (!currentUser || !participants) return "Provider";
-
-        const otherParticipantIndex = participants.findIndex(id => id !== currentUser.uid);
-        return participantNames[otherParticipantIndex] || "Provider";
-    };
-
-    const getOtherUserId = (participants: string[]) => {
-        if (!currentUser || !participants) return "";
-        return participants.find(id => id !== currentUser?.uid) || "";
-    };
 
     const formatTime = (timestamp: any) => {
         if (!timestamp) return "";
         try {
             const date = timestamp.toDate();
-            return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
         } catch (error) {
             return "";
         }
     };
 
     const renderConversationItem = ({ item }: { item: Conversation }) => {
-        const otherUserName = getOtherUserName(item.participants, item.participantNames);
-        const otherUserId = getOtherUserId(item.participants);
-        const userType = "provider";
+        const otherUserName = item.otherUserName || item.participantNames[1] || "Customer";
+        const otherUserId = item.otherUserId || "";
+        const pictureUri = item.otherUserPicture ?? null;
 
         return (
             <TouchableOpacity
@@ -154,24 +246,42 @@ export default function MessageScreen() {
                             params: {
                                 conversationId: item.id,
                                 otherUserName: otherUserName,
-                                otherUserId: otherUserId,
-                                userType: userType
-                            }
+                                otherUserId,
+                                userType: "provider", // other participant is provider
+                            },
                         });
                     }
                 }}
             >
                 <View style={styles.avatarContainer}>
-                    <View style={styles.avatar}>
-                        <Text style={styles.avatarText}>
-                            {otherUserName.split(" ").map((n: string) => n[0]).join("").toUpperCase()}
-                        </Text>
-                    </View>
+                    {pictureUri ? (
+                        <Image
+                            source={{ uri: pictureUri }}
+                            style={styles.avatarImage}
+                            onError={(e) => {
+                                console.warn("Avatar image failed to load:", e.nativeEvent);
+                            }}
+                        />
+                    ) : (
+                        <View style={styles.avatar}>
+                            <Text style={styles.avatarText}>
+                                {otherUserName
+                                    .split(" ")
+                                    .map((n) => n[0] || "")
+                                    .join("")
+                                    .slice(0, 2)
+                                    .toUpperCase()}
+                            </Text>
+                        </View>
+                    )}
                     {item.unread && <View style={styles.unreadDot} />}
                 </View>
+
                 <View style={styles.messageContent}>
                     <Text style={styles.name}>{otherUserName}</Text>
-                    <Text style={styles.messageText}>{item.lastMessage}</Text>
+                    <Text style={styles.messageText} numberOfLines={1}>
+                        {item.lastMessage}
+                    </Text>
                 </View>
                 <Text style={styles.time}>{formatTime(item.lastMessageTime)}</Text>
             </TouchableOpacity>
@@ -222,7 +332,7 @@ export default function MessageScreen() {
                             {searchQuery ? "No conversations found" : "No conversations yet"}
                         </Text>
                         <Text style={styles.emptyStateSubText}>
-                            Start a conversation from a provider&#39;s profile
+                            Start a conversation from a provider's profile
                         </Text>
                     </View>
                 }
@@ -252,9 +362,9 @@ export default function MessageScreen() {
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: "#F4EDFF" },
     header: {
-        flexDirection: "row" as const,
-        alignItems: "center" as const,
-        justifyContent: "space-between" as const,
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
         paddingHorizontal: 20,
         paddingVertical: 15,
         backgroundColor: "#F4EDFF",
@@ -275,8 +385,8 @@ const styles = StyleSheet.create({
     },
     messagesList: { flex: 1, paddingHorizontal: 15 },
     messageItem: {
-        flexDirection: "row" as const,
-        alignItems: "center" as const,
+        flexDirection: "row",
+        alignItems: "center",
         backgroundColor: "#fff",
         borderRadius: 15,
         padding: 15,
@@ -287,18 +397,24 @@ const styles = StyleSheet.create({
         shadowRadius: 3,
         elevation: 2,
     },
-    avatarContainer: { position: "relative" as const, marginRight: 15 },
+    avatarContainer: { position: "relative", marginRight: 15 },
     avatar: {
         width: 50,
         height: 50,
         borderRadius: 25,
         backgroundColor: "#BFA2E0",
-        justifyContent: "center" as const,
-        alignItems: "center" as const,
+        justifyContent: "center",
+        alignItems: "center",
     },
     avatarText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
+    avatarImage: {
+        width: 50,
+        height: 50,
+        borderRadius: 25,
+        backgroundColor: "#eee",
+    },
     unreadDot: {
-        position: "absolute" as const,
+        position: "absolute",
         top: -2,
         right: -2,
         width: 12,
@@ -313,17 +429,17 @@ const styles = StyleSheet.create({
     messageText: { fontSize: 14, color: "#666" },
     time: { fontSize: 12, color: "#999" },
     bottomNav: {
-        flexDirection: "row" as const,
-        justifyContent: "space-around" as const,
-        alignItems: "center" as const,
+        flexDirection: "row",
+        justifyContent: "space-around",
+        alignItems: "center",
         paddingVertical: 10,
         borderTopWidth: 1,
         borderColor: "#ddd",
         backgroundColor: "#fff",
     },
-    emptyState: { padding: 20, alignItems: "center" as const },
-    emptyStateText: { color: "#666", fontSize: 16, textAlign: "center" as const },
-    emptyStateSubText: { color: "#999", fontSize: 14, textAlign: "center" as const, marginTop: 8 },
-    loadingContainer: { flex: 1, justifyContent: "center" as const, alignItems: "center" as const },
+    emptyState: { padding: 20, alignItems: "center" },
+    emptyStateText: { color: "#666", fontSize: 16, textAlign: "center" },
+    emptyStateSubText: { color: "#999", fontSize: 14, textAlign: "center", marginTop: 8 },
+    loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
     loadingText: { marginTop: 10, color: "#666" },
 });

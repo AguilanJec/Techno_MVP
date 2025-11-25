@@ -312,16 +312,17 @@ export default function Details() {
 
             querySnapshot.forEach((doc) => {
                 const conversation = doc.data();
-                if (conversation.participants.includes(tutor.id)) {
+                if (Array.isArray(conversation.participants) && conversation.participants.includes(tutor.id)) {
                     existingConversation = { id: doc.id, ...conversation };
                 }
             });
 
+            // param names expected by ChatScreen: conversationId, otherUserName, otherUserId, userType
             if (existingConversation) {
                 router.push(
-                    `/chat?conversationId=${existingConversation.id}&providerName=${encodeURIComponent(
+                    `/chat?conversationId=${encodeURIComponent(existingConversation.id)}&otherUserName=${encodeURIComponent(
                         tutor.name
-                    )}&providerId=${tutor.id}`
+                    )}&otherUserId=${encodeURIComponent(tutor.id)}&userType=provider`
                 );
             } else {
                 const newConversation = {
@@ -333,20 +334,19 @@ export default function Details() {
                     lastMessageSender: currentUser.uid,
                 };
 
-                const docRef = await addDoc(
-                    collection(db, "conversations"),
-                    newConversation
-                );
+                const docRef = await addDoc(collection(db, "conversations"), newConversation);
+
                 router.push(
-                    `/chat?conversationId=${docRef.id}&providerName=${encodeURIComponent(
+                    `/chat?conversationId=${encodeURIComponent(docRef.id)}&otherUserName=${encodeURIComponent(
                         tutor.name
-                    )}&providerId=${tutor.id}`
+                    )}&otherUserId=${encodeURIComponent(tutor.id)}&userType=provider`
                 );
             }
         } catch (error) {
             console.error("Error starting conversation:", error);
         }
     };
+
 
     // Function to get initials for avatar
     const getInitials = (name: string) => {

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
     View,
     Text,
@@ -91,6 +91,39 @@ export default function ChatScreen() {
         };
     }, [sound]);
 
+    // sanitize picture string stored in Firestore (handles data:image/...;base64, raw base64, url(...) and http urls)
+    const sanitizePictureUri = useCallback((raw?: string | null) => {
+        if (!raw) return null;
+        let s = raw.trim();
+
+        // unwrap url(...) wrappers and surrounding quotes
+        const urlMatch = s.match(/^url\(["']?(.*?)["']?\)$/i);
+        if (urlMatch && urlMatch[1]) s = urlMatch[1];
+
+        // if it's an http(s) url, return as is
+        if (/^https?:\/\//i.test(s)) return s;
+
+        // if it's already a data URI (data:image/...), return as is
+        if (/^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(s)) return s;
+
+        // sometimes firestore might have "data:imag..." truncated - try to repair if possible
+        if (/^data:imag[e]*/i.test(s) && s.includes("base64,")) {
+            return s.replace(/^data:imag/, "data:image");
+        }
+
+        // raw base64 detection: JPEG header often starts with '/9j/' in base64, png has 'iVBOR'
+        if (/^(\/9j\/|iVBOR|R0lGOD)/.test(s)) {
+            return `data:image/jpeg;base64,${s}`;
+        }
+
+        // if it's long and looks like base64, assume jpeg
+        if (/^[A-Za-z0-9+/=\s]+$/.test(s) && s.length > 100) {
+            return `data:image/jpeg;base64,${s}`;
+        }
+
+        return null;
+    }, []);
+
     const fetchOtherUserData = async () => {
         if (!otherUserId) {
             setIsLoading(false);
@@ -99,12 +132,27 @@ export default function ChatScreen() {
 
         try {
             const collectionName = userType === "provider" ? "providers" : "users";
-            const userDoc = await getDoc(doc(db, collectionName, otherUserId));
+            let userDoc = await getDoc(doc(db, collectionName, otherUserId));
+
+            // fallback to other collection if not found
+            if (!userDoc.exists()) {
+                const altCollection = collectionName === "users" ? "providers" : "users";
+                userDoc = await getDoc(doc(db, altCollection, otherUserId));
+            }
+
             if (userDoc.exists()) {
-                setOtherUserData(userDoc.data());
+                const raw = userDoc.data();
+                const pictureUri = sanitizePictureUri(raw?.picture ?? null);
+                setOtherUserData({
+                    ...raw,
+                    pictureUri: pictureUri ?? null,
+                });
+            } else {
+                setOtherUserData(null);
             }
         } catch (error) {
             console.error("Error fetching user data:", error);
+            setOtherUserData(null);
         } finally {
             setIsLoading(false);
         }
@@ -240,12 +288,12 @@ export default function ChatScreen() {
                 multiple: false,
             });
 
-            if (result.canceled) return;
+            if ((result as any).canceled) return;
 
-            const file = result.assets?.[0];
+            const file = (result as any).assets?.[0] ?? result;
             if (file) {
                 const fileSizeInKB = Math.round((file.size || 0) / 1024);
-                const fileType = file.mimeType || 'Unknown type';
+                const fileType = (file.mimeType || file.type) || 'Unknown type';
 
                 await sendMessage({
                     text: `Sent file: ${file.name}`,
@@ -408,8 +456,8 @@ export default function ChatScreen() {
     };
 
     const handleCall = () => {
-        // For demo purposes, we'll use a placeholder phone number
-        const phoneNumber = "+1234567890"; // Placeholder number
+        // For demo purposes, we'll use a placeholder phone number or fallback to otherUserData
+        const phoneNumber = otherUserData?.phone || "+1234567890";
 
         // Create call record in Firestore
         sendMessage({
@@ -610,6 +658,10 @@ export default function ChatScreen() {
         );
     }
 
+    // choose display name & pictureUri (prefer fetched doc)
+    const headerDisplayName = otherUserData?.name || otherUserName || "Unknown User";
+    const headerPictureUri = otherUserData?.pictureUri ?? null;
+
     return (
         <SafeAreaView style={styles.container}>
             <View style={styles.header}>
@@ -618,13 +670,22 @@ export default function ChatScreen() {
                 </TouchableOpacity>
 
                 <View style={styles.userInfo}>
-                    <View style={styles.avatar}>
-                        <Text style={styles.avatarText}>
-                            {otherUserName?.split(" ").map((n: string) => n[0]).join("").toUpperCase() || "U"}
-                        </Text>
-                    </View>
+                    {headerPictureUri ? (
+                        <Image
+                            source={{ uri: headerPictureUri }}
+                            style={styles.avatarImage}
+                            onError={(e) => console.warn("Header avatar failed to load:", e.nativeEvent)}
+                        />
+                    ) : (
+                        <View style={styles.avatar}>
+                            <Text style={styles.avatarText}>
+                                {headerDisplayName?.split(" ").map((n: string) => n[0]).join("").slice(0, 2).toUpperCase() || "U"}
+                            </Text>
+                        </View>
+                    )}
+
                     <View style={styles.userDetails}>
-                        <Text style={styles.userName}>{otherUserName || "Unknown User"}</Text>
+                        <Text style={styles.userName}>{headerDisplayName}</Text>
                         <Text style={styles.userStatus}>
                             {otherUserData?.status === "online" ? "Online" : "Offline"}
                         </Text>
@@ -760,6 +821,14 @@ const styles = StyleSheet.create({
         color: "#fff",
         fontWeight: "bold",
         fontSize: 16,
+    },
+    // header avatar image
+    avatarImage: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        backgroundColor: "#eee",
+        marginRight: 12,
     },
     userDetails: {
         flex: 1,
@@ -978,7 +1047,7 @@ const styles = StyleSheet.create({
         fontSize: 14,
         marginLeft: 8,
         marginRight: 12,
-        fontWeight: '500',
+        fontWeight: "500",
     },
     recordingDot: {
         width: 8,

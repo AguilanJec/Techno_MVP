@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
     View,
     Text,
@@ -54,7 +54,7 @@ export default function ChatScreen() {
     const router = useRouter();
     const params = useLocalSearchParams();
     const conversationId = params.conversationId as string;
-    const otherUserName = params.otherUserName as string;
+    const otherUserNameParam = params.otherUserName as string;
     const otherUserId = params.otherUserId as string;
     const userType = params.userType as string;
 
@@ -81,16 +81,49 @@ export default function ChatScreen() {
         } else {
             setIsLoading(false);
         }
-    }, [conversationId, currentUser]);
-
-    useEffect(() => {
+        // cleanup on unmount
         return () => {
-            if (sound) {
-                sound.unloadAsync();
+            if (sound) sound.unloadAsync();
+            if (recordingTimerRef.current) {
+                clearInterval(recordingTimerRef.current);
             }
         };
-    }, [sound]);
+    }, [conversationId, currentUser]);
 
+    // --- sanitize base64 / data URI / http url ---
+    const sanitizePictureUri = useCallback((raw?: string | null) => {
+        if (!raw) return null;
+        let s = raw.trim();
+
+        // unwrap url(...) wrappers and surrounding quotes
+        const urlMatch = s.match(/^url\(["']?(.*?)["']?\)$/i);
+        if (urlMatch && urlMatch[1]) s = urlMatch[1];
+
+        // if it's an http(s) url, return as is
+        if (/^https?:\/\//i.test(s)) return s;
+
+        // if it's already a data URI (data:image/...), return as is
+        if (/^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(s)) return s;
+
+        // sometimes firestore might have "data:imag..." truncated - try to repair if possible
+        if (/^data:imag[e]*/i.test(s) && s.includes("base64,")) {
+            return s.replace(/^data:imag/, "data:image");
+        }
+
+        // raw base64 detection: JPEG header often starts with '/9j/' in base64, png has 'iVBOR', gif has 'R0lGOD'
+        if (/^(\/9j\/|iVBOR|R0lGOD)/.test(s)) {
+            return `data:image/jpeg;base64,${s}`;
+        }
+
+        // if it contains only base64 chars and is long, assume base64 jpeg
+        if (/^[A-Za-z0-9+/=\s]+$/.test(s) && s.length > 100) {
+            return `data:image/jpeg;base64,${s}`;
+        }
+
+        return null;
+    }, []);
+
+    // fetch other user document and set pictureUri in state
     const fetchOtherUserData = async () => {
         if (!otherUserId) {
             setIsLoading(false);
@@ -99,12 +132,28 @@ export default function ChatScreen() {
 
         try {
             const collectionName = userType === "provider" ? "providers" : "users";
-            const userDoc = await getDoc(doc(db, collectionName, otherUserId));
+            // try primary collection
+            let userDoc = await getDoc(doc(db, collectionName, otherUserId));
+
+            // fallback to the other collection if not found
+            if (!userDoc.exists()) {
+                const alt = collectionName === "providers" ? "users" : "providers";
+                userDoc = await getDoc(doc(db, alt, otherUserId));
+            }
+
             if (userDoc.exists()) {
-                setOtherUserData(userDoc.data());
+                const raw = userDoc.data();
+                const pictureUri = sanitizePictureUri(raw?.picture ?? null);
+                setOtherUserData({
+                    ...raw,
+                    pictureUri: pictureUri ?? null,
+                });
+            } else {
+                setOtherUserData(null);
             }
         } catch (error) {
             console.error("Error fetching user data:", error);
+            setOtherUserData(null);
         } finally {
             setIsLoading(false);
         }
@@ -122,10 +171,10 @@ export default function ChatScreen() {
             const unsubscribe = onSnapshot(messagesQuery,
                 (snapshot) => {
                     const messagesData: Message[] = [];
-                    snapshot.forEach((doc) => {
-                        const data = doc.data();
+                    snapshot.forEach((d) => {
+                        const data = d.data();
                         messagesData.push({
-                            id: doc.id,
+                            id: d.id,
                             text: data.text || "",
                             senderId: data.senderId,
                             time: data.time,
@@ -175,7 +224,6 @@ export default function ChatScreen() {
         try {
             setIsSending(true);
 
-            // Create a clean message object without undefined values
             const message: any = {
                 text: messageData.text || "",
                 senderId: currentUser.uid,
@@ -183,7 +231,6 @@ export default function ChatScreen() {
                 type: messageData.type || "text",
             };
 
-            // Only add fields that have values
             if (messageData.imageUri) message.imageUri = messageData.imageUri;
             if (messageData.voiceUri) message.voiceUri = messageData.voiceUri;
             if (messageData.fileName) message.fileName = messageData.fileName;
@@ -195,7 +242,7 @@ export default function ChatScreen() {
 
             await addDoc(collection(db, "conversations", conversationId, "messages"), message);
 
-            // Update conversation last message
+            // update conversation summary
             let lastMessageText = "";
             switch (messageData.type) {
                 case "text":
@@ -232,6 +279,7 @@ export default function ChatScreen() {
         }
     };
 
+    // file/image/voice helpers (kept as before)
     const pickFile = async () => {
         try {
             const result = await DocumentPicker.getDocumentAsync({
@@ -240,12 +288,12 @@ export default function ChatScreen() {
                 multiple: false,
             });
 
-            if (result.canceled) return;
+            if ((result as any).canceled) return;
 
-            const file = result.assets?.[0];
+            const file = (result as any).assets?.[0] ?? result;
             if (file) {
                 const fileSizeInKB = Math.round((file.size || 0) / 1024);
-                const fileType = file.mimeType || 'Unknown type';
+                const fileType = (file.mimeType || file.type) || 'Unknown type';
 
                 await sendMessage({
                     text: `Sent file: ${file.name}`,
@@ -408,17 +456,14 @@ export default function ChatScreen() {
     };
 
     const handleCall = () => {
-        // For demo purposes, we'll use a placeholder phone number
-        const phoneNumber = "+1234567890"; // Placeholder number
+        const phoneNumber = otherUserData?.phone || "+1234567890";
 
-        // Create call record in Firestore
         sendMessage({
             type: "call",
             callAction: "started",
             text: "Call started"
         });
 
-        // Open phone dialer with the number
         Linking.openURL(`tel:${phoneNumber}`)
             .catch(err => {
                 console.error('Error opening phone dialer:', err);
@@ -610,6 +655,10 @@ export default function ChatScreen() {
         );
     }
 
+    // header display: prefer fetched doc name then param
+    const headerDisplayName = otherUserData?.name || otherUserNameParam || "Unknown User";
+    const headerPictureUri = otherUserData?.pictureUri ?? null;
+
     return (
         <SafeAreaView style={styles.container}>
             <View style={styles.header}>
@@ -618,13 +667,25 @@ export default function ChatScreen() {
                 </TouchableOpacity>
 
                 <View style={styles.userInfo}>
-                    <View style={styles.avatar}>
-                        <Text style={styles.avatarText}>
-                            {otherUserName?.split(" ").map((n: string) => n[0]).join("").toUpperCase() || "U"}
-                        </Text>
-                    </View>
+                    {headerPictureUri ? (
+                        <Image
+                            source={{ uri: headerPictureUri }}
+                            style={styles.avatarImage}
+                            onError={() => {
+                                // if the image fails to load, clear pictureUri so initials show
+                                setOtherUserData(prev => prev ? { ...prev, pictureUri: null } : prev);
+                            }}
+                        />
+                    ) : (
+                        <View style={styles.avatar}>
+                            <Text style={styles.avatarText}>
+                                {headerDisplayName?.split(" ").map((n: string) => n[0]).join("").slice(0, 2).toUpperCase() || "U"}
+                            </Text>
+                        </View>
+                    )}
+
                     <View style={styles.userDetails}>
-                        <Text style={styles.userName}>{otherUserName || "Unknown User"}</Text>
+                        <Text style={styles.userName}>{headerDisplayName}</Text>
                         <Text style={styles.userStatus}>
                             {otherUserData?.status === "online" ? "Online" : "Offline"}
                         </Text>
@@ -760,6 +821,14 @@ const styles = StyleSheet.create({
         color: "#fff",
         fontWeight: "bold",
         fontSize: 16,
+    },
+    // header avatar image
+    avatarImage: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        backgroundColor: "#eee",
+        marginRight: 12,
     },
     userDetails: {
         flex: 1,
@@ -978,7 +1047,7 @@ const styles = StyleSheet.create({
         fontSize: 14,
         marginLeft: 8,
         marginRight: 12,
-        fontWeight: '500',
+        fontWeight: "500",
     },
     recordingDot: {
         width: 8,

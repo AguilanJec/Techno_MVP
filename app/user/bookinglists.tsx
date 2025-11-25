@@ -49,7 +49,7 @@ const MyBookingsListScreen: React.FC = () => {
     const [bookings, setBookings] = useState<Booking[]>([]);
     const [loading, setLoading] = useState(true);
 
-    // Add the startConversation function from details.tsx
+    // startConversation — fixed param names so ChatScreen receives otherUserName / otherUserId / userType
     const startConversation = async (providerId: string, providerName: string) => {
         const auth = getAuth();
         if (!providerId || !auth.currentUser) return;
@@ -59,48 +59,47 @@ const MyBookingsListScreen: React.FC = () => {
 
             // Check if conversation already exists
             const existingConvQuery = query(
-                collection(db, "conversations"),
-                where("participants", "array-contains", currentUser.uid)
+                collection(db, 'conversations'),
+                where('participants', 'array-contains', currentUser.uid)
             );
 
             const querySnapshot = await getDocs(existingConvQuery);
             let existingConversation: any = null;
 
-            querySnapshot.forEach((doc) => {
-                const conversation = doc.data();
-                if (conversation.participants.includes(providerId)) {
-                    existingConversation = { id: doc.id, ...conversation };
+            querySnapshot.forEach((docSnap) => {
+                const conversation = docSnap.data();
+                if (conversation.participants && conversation.participants.includes(providerId)) {
+                    existingConversation = { id: docSnap.id, ...conversation };
                 }
             });
 
             if (existingConversation) {
+                // Use param names expected by ChatScreen
                 router.push(
-                    `/chat?conversationId=${existingConversation.id}&providerName=${encodeURIComponent(
+                    `/chat?conversationId=${existingConversation.id}&otherUserName=${encodeURIComponent(
                         providerName
-                    )}&providerId=${providerId}`
+                    )}&otherUserId=${encodeURIComponent(providerId)}&userType=provider`
                 );
             } else {
                 const newConversation = {
                     participants: [currentUser.uid, providerId],
-                    participantNames: [currentUser.displayName || "User", providerName],
-                    lastMessage: "Conversation started",
+                    participantNames: [currentUser.displayName || 'User', providerName],
+                    lastMessage: 'Conversation started',
                     lastMessageTime: new Date(),
                     unread: false,
                     lastMessageSender: currentUser.uid,
                 };
 
-                const docRef = await addDoc(
-                    collection(db, "conversations"),
-                    newConversation
-                );
+                const docRef = await addDoc(collection(db, 'conversations'), newConversation);
+
                 router.push(
-                    `/chat?conversationId=${docRef.id}&providerName=${encodeURIComponent(
+                    `/chat?conversationId=${docRef.id}&otherUserName=${encodeURIComponent(
                         providerName
-                    )}&providerId=${providerId}`
+                    )}&otherUserId=${encodeURIComponent(providerId)}&userType=provider`
                 );
             }
         } catch (error) {
-            console.error("Error starting conversation:", error);
+            console.error('Error starting conversation:', error);
         }
     };
 
@@ -110,7 +109,11 @@ const MyBookingsListScreen: React.FC = () => {
 
         const cleanup = () => {
             unsubscribers.forEach((u) => {
-                try { u(); } catch (e) { /* ignore */ }
+                try {
+                    u();
+                } catch (e) {
+                    /* ignore */
+                }
             });
             unsubscribers.length = 0;
         };
@@ -122,7 +125,13 @@ const MyBookingsListScreen: React.FC = () => {
             const d = docData as any;
             const rawStatus = (d.status ?? 'pending').toString().toLowerCase();
             const statusLabel =
-                rawStatus === 'accepted' ? 'Accepted' : rawStatus === 'completed' ? 'Completed' : (rawStatus === 'cancelled' ? 'Cancelled' : 'Pending');
+                rawStatus === 'accepted'
+                    ? 'Accepted'
+                    : rawStatus === 'completed'
+                        ? 'Completed'
+                        : rawStatus === 'cancelled'
+                            ? 'Cancelled'
+                            : 'Pending';
 
             let createdAtNum = 0;
             try {
@@ -145,10 +154,7 @@ const MyBookingsListScreen: React.FC = () => {
                 distance: d.providerDistance ?? d.distance ?? '—',
                 rating: typeof d.providerRating === 'number' ? d.providerRating : 0,
                 reviews: typeof d.providerReviews === 'number' ? d.providerReviews : 0,
-                price:
-                    typeof d.ratePerHour === 'number'
-                        ? d.ratePerHour
-                        : parseFloat(d.ratePerHour || '0') || 0,
+                price: typeof d.ratePerHour === 'number' ? d.ratePerHour : parseFloat(d.ratePerHour || '0') || 0,
                 favorite: false,
                 status: statusLabel,
                 providerId: d.providerId,
@@ -205,7 +211,6 @@ const MyBookingsListScreen: React.FC = () => {
                                 let pic: string | null = null;
                                 if (typeof p.picture === 'string' && p.picture.trim() !== '') {
                                     const s = p.picture.trim();
-                                    // remove url( ... ) wrapper if present and any surrounding quotes
                                     const extracted = s.replace(/^url\((['"])?/, '').replace(/(['"])?\)$/, '');
                                     pic = extracted;
                                 } else {
@@ -261,11 +266,7 @@ const MyBookingsListScreen: React.FC = () => {
             try {
                 if (user.uid) {
                     queries.push(
-                        query(
-                            collection(db, 'appointments'),
-                            where('userId', '==', user.uid),
-                            orderBy('createdAt', 'desc')
-                        )
+                        query(collection(db, 'appointments'), where('userId', '==', user.uid), orderBy('createdAt', 'desc'))
                     );
                 }
             } catch (e) {
@@ -275,11 +276,7 @@ const MyBookingsListScreen: React.FC = () => {
             if (user.email) {
                 try {
                     queries.push(
-                        query(
-                            collection(db, 'appointments'),
-                            where('userEmail', '==', user.email),
-                            orderBy('createdAt', 'desc')
-                        )
+                        query(collection(db, 'appointments'), where('userEmail', '==', user.email), orderBy('createdAt', 'desc'))
                     );
                 } catch (e) {
                     // ignore
@@ -312,7 +309,11 @@ const MyBookingsListScreen: React.FC = () => {
 
         // make sure we unsubscribe auth listener on cleanup
         return () => {
-            try { authUnsub(); } catch (e) { /* ignore */ }
+            try {
+                authUnsub();
+            } catch (e) {
+                /* ignore */
+            }
             cleanup();
         };
     }, []);
@@ -336,12 +337,10 @@ const MyBookingsListScreen: React.FC = () => {
                 {['All', 'Pending', 'Accepted', 'Completed'].map((tab) => (
                     <TouchableOpacity
                         key={tab}
-                        style={[styles.tab, (selectedTab === tab) && styles.tabActive]}
+                        style={[styles.tab, selectedTab === tab && styles.tabActive]}
                         onPress={() => setSelectedTab(tab as any)}
                     >
-                        <Text style={[styles.tabText, (selectedTab === tab) && styles.tabTextActive]}>
-                            {tab}
-                        </Text>
+                        <Text style={[styles.tabText, selectedTab === tab && styles.tabTextActive]}>{tab}</Text>
                     </TouchableOpacity>
                 ))}
             </View>
@@ -428,11 +427,7 @@ const MyBookingsListScreen: React.FC = () => {
                             </View>
 
                             <View style={styles.rightSection}>
-                                <Ionicons
-                                    name={b.favorite ? 'heart' : 'heart-outline'}
-                                    size={20}
-                                    color={b.favorite ? 'red' : '#aaa'}
-                                />
+                                <Ionicons name={b.favorite ? 'heart' : 'heart-outline'} size={20} color={b.favorite ? 'red' : '#aaa'} />
                                 <Text style={styles.price}>₱{b.price}</Text>
                                 <Text style={styles.perHour}>per hour</Text>
                             </View>
@@ -443,9 +438,7 @@ const MyBookingsListScreen: React.FC = () => {
                         <Ionicons name="calendar-outline" size={60} color="#ccc" />
                         <Text style={styles.emptyStateText}>No {selectedTab.toLowerCase()} bookings found</Text>
                         <Text style={styles.emptyStateSubText}>
-                            {selectedTab === 'All'
-                                ? "You don't have any bookings yet"
-                                : `You don't have any ${selectedTab.toLowerCase()} bookings`}
+                            {selectedTab === 'All' ? "You don't have any bookings yet" : `You don't have any ${selectedTab.toLowerCase()} bookings`}
                         </Text>
                     </View>
                 )}
