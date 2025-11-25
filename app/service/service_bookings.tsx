@@ -467,7 +467,7 @@ const ServiceBookingsScreen: React.FC = () => {
                                 )}
                                 <TouchableOpacity
                                     style={[styles.actionButton, styles.messageButton]}
-                                    onPress={() => router.push(`../service_chat?userId=${booking.userId}&userName=${encodeURIComponent(booking.userName)}`)}
+                                    onPress={() => router.push(`../service/service_chat?userId=${booking.userId}&userName=${encodeURIComponent(booking.userName)}`)}
                                 >
                                     <Text style={styles.actionButtonText}>Message</Text>
                                 </TouchableOpacity>
