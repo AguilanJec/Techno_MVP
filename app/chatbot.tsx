@@ -11,9 +11,6 @@ import {
     Alert,
 } from "react-native";
 import { useRouter } from "expo-router";
-import * as ImagePicker from "expo-image-picker";
-import * as DocumentPicker from 'expo-document-picker';
-import { Audio } from "expo-av";
 import { Ionicons } from "@expo/vector-icons";
 
 interface Message {
@@ -21,14 +18,7 @@ interface Message {
     text: string;
     isUser: boolean;
     time: string;
-    type: "text" | "image" | "voice" | "file";
-    imageUri?: string;
-    voiceUri?: string;
-    fileName?: string;
-    fileSize?: number;
-    fileType?: string;
-    fileUri?: string;
-    duration?: number;
+    type: "text";
 }
 
 export default function ChatbotScreen() {
@@ -45,21 +35,7 @@ export default function ChatbotScreen() {
     ]);
 
     const [newMessage, setNewMessage] = useState("");
-    const [isRecording, setIsRecording] = useState(false);
-    const [recording, setRecording] = useState<Audio.Recording | null>(null);
-    const [sound, setSound] = useState<Audio.Sound | null>(null);
-    const [recordingDuration, setRecordingDuration] = useState(0);
-
-    const recordingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const flatListRef = useRef<FlatList<any> | null>(null);
-
-    useEffect(() => {
-        return sound
-            ? () => {
-                sound.unloadAsync();
-            }
-            : undefined;
-    }, [sound]);
 
     useEffect(() => {
         const timer = setTimeout(() => {
@@ -76,74 +52,74 @@ export default function ChatbotScreen() {
     const getAIResponse = (userMessage: string): string => {
         const msg = userMessage.toLowerCase().trim();
 
-        // 1. Greetings
-        if (/(hello|hi|hey|good morning|good afternoon|good evening)/i.test(msg)) {
-            return "Hello! I'm Mavi, your virtual assistant. How can I help you today?";
-        }
-
-        // 2. Thanks / Gratitude
-        if (/(thank you|thanks|ty|thank u|gracias|salamat)/i.test(msg)) {
+        // 2. Thanks / Gratitude - moved up
+        if (/\b(thank you|thanks|ty|thank u|gracias|salamat)\b/i.test(msg)) {
             return "You're very welcome! I'm always here whenever you need support. Just ask anytime";
         }
 
-        // 3. Special Needs & Disabilities (Most Important)
-        if (/(special needs|special child|autism|asd|adhd|down syndrome|developmental delay|speech delay|sensory|disability|inclusive|handle special)/i.test(msg)) {
-            return "Every child is unique and deserves the best support. Hiraya is fully committed to helping families with children who have special needs.\n\nHere’s how we can help:\n\n• Trained caregivers experienced in autism, ADHD, Down syndrome, sensory processing, and more\n• One-on-one consultations with child development specialists\n• Inclusive childcare with low ratios & sensory-friendly spaces\n• Personalized care plans and therapy recommendations\n• Parent support groups & workshops\n• Home activity guides and visual schedules\n\nYou’re doing an amazing job. Would you like to book a free consultation or get specific resources for your child?";
+        // 3. Special Needs & Disabilities
+        if (/\b(special needs|special child|autism|asd|adhd|down syndrome|developmental delay|speech delay|sensory|disability|inclusive|handle special)\b/i.test(msg)) {
+            return "Every child is unique and deserves the best support. Hiraya is fully committed to helping families with children who have special needs.\n\nHere's how we can help:\n\n• Trained caregivers experienced in autism, ADHD, Down syndrome, sensory processing, and more\n• One-on-one consultations with child development specialists\n• Inclusive childcare with low ratios & sensory-friendly spaces\n• Personalized care plans and therapy recommendations\n• Parent support groups & workshops\n• Home activity guides and visual schedules\n\nYou're doing an amazing job. Would you like to book a free consultation or get specific resources for your child?";
         }
 
         // 4. Tantrums / Meltdowns
-        if (/(tantrum|meltdown|crying|screaming|angry|out of control|throwing things)/i.test(msg)) {
-            return "Tantrums are tough, but very normal! Here are quick tips:\n\n• Stay calm — your calm helps them calm\n• Name their feeling: “I see you’re really upset because…”\n• Offer a safe space or hug (if they want it)\n• Use a calm-down corner with soft toys or fidget items\n• After they calm: talk about feelings and better choices\n\nWe also have a free “Calm Down Kit” PDF in the Resources section. Want me to send you the link?";
+        if (/\b(tantrum|meltdown|crying|screaming|angry|out of control|throwing things|hitting)\b/i.test(msg)) {
+            return "Tantrums are tough, but very normal! Here are quick tips:\n\n• Stay calm — your calm helps them calm\n• Name their feeling: 'I see you're really upset because…'\n• Offer a safe space or hug (if they want it)\n• Use a calm-down corner with soft toys or fidget items\n• After they calm: talk about feelings and better choices\n\nWe also have a free 'Calm Down Kit' PDF in the Resources section. Want me to send you the link?";
         }
 
-        // 5. Screen Time / Too Much Gadget
-        if (/(screen time|ipad|phone|tablet|addicted to gadget|too much youtube)/i.test(msg)) {
+        // 5. Biting / Hitting / Aggressive Behavior - more specific
+        if (/\b(bite|biting|hitting|hit|aggressive|hurts others|push|kick)\b/i.test(msg)) {
+            return "This behavior is usually about big feelings or wanting attention.\n\nWhat helps:\n• Stay calm & stop the action safely\n• Say: 'We don't hit. Hands are for helping.'\n• Teach words: 'You're angry. Say: I'm mad!'\n• Give positive attention for gentle hands\n• Short time-in (hug & breathe together)\n\nWe run monthly workshops on Positive Discipline. Want to join the next one?";
+        }
+
+        // 6. Screen Time / Too Much Gadget
+        if (/\b(screen time|ipad|phone|tablet|addicted to gadget|too much youtube)\b/i.test(msg)) {
             return "Many parents worry about screen time — you're not alone!\n\nHealthy limits:\n• Under 2 years: almost none (except video calls)\n• 2–5 years: max 1 hour/day with parent\n• 5+: consistent rules + balanced activities\n\nTry these instead:\n• Outdoor playdates\n• Art & crafts\n• Reading together\n• Sensory bins (rice, water beads)\n\nWe have a 7-Day Screen Detox Challenge for families! Shall I guide you to it?";
         }
 
-        // 6. Sleep Problems
-        if (/(sleep|bedtime|won’t sleep|night waking|nightmare|afraid of dark)/i.test(msg)) {
+        // 7. Sleep Problems
+        if (/\b(sleep|bedtime|won't sleep|night waking|nightmare|afraid of dark)\b/i.test(msg)) {
             return "Sleep struggles are so common! Here are proven tips:\n\n• Consistent bedtime routine (bath → book → bed)\n• No screens 1 hour before bed\n• Dim lights & white noise\n• Comfort item (blanket, stuffed toy)\n• Reward chart for staying in bed\n\nWe offer a free Sleep Guide for ages 1–10 in the Resources tab. Would you like it?";
         }
 
-        // 7. Picky Eating / Won’t Eat Vegetables
-        if (/(picky eater|won’t eat|vegetable|food|refuse to eat|only eats junk)/i.test(msg)) {
-            return "Picky eating is super common up to age 7!\n\nTips that work:\n• Offer new food 10–15 times (no pressure)\n• Make food fun (smiley faces, colorful plates)\n• Let them help cook\n• Eat together as family — no separate meals\n• One-bite rule (just try one small bite)\n\nWe have a “Fun with Food” e-book with recipes kids love. Want it?";
-        }
-
-        // 8. Biting / Hitting / Aggressive Behavior
-        if (/(bite|hitting|aggressive|hurts others|push|kick)/i.test(msg)) {
-            return "This behavior is usually about big feelings or wanting attention.\n\nWhat helps:\n• Stay calm & stop the action safely\n• Say: “We don’t hit. Hands are for helping.”\n• Teach words: “You’re angry. Say: I’m mad!”\n• Give positive attention for gentle hands\n• Short time-in (hug & breathe together)\n\nWe run monthly workshops on Positive Discipline. Want to join the next one?";
+        // 8. Picky Eating / Won't Eat Vegetables
+        if (/\b(picky eater|won't eat|vegetable|food|refuse to eat|only eats junk)\b/i.test(msg)) {
+            return "Picky eating is super common up to age 7!\n\nTips that work:\n• Offer new food 10–15 times (no pressure)\n• Make food fun (smiley faces, colorful plates)\n• Let them help cook\n• Eat together as family — no separate meals\n• One-bite rule (just try one small bite)\n\nWe have a 'Fun with Food' e-book with recipes kids love. Want it?";
         }
 
         // 9. School Readiness / Separation Anxiety
-        if (/(school|big school|kindergarten|afraid to go|separation anxiety|cry when leave)/i.test(msg)) {
-            return "Starting school is a big milestone!\n\nTo help:\n• Visit the school together beforehand\n• Practice short goodbyes\n• Create a goodbye ritual (special hug + kiss)\n• Photo of family in their bag\n• Read books like “The Kissing Hand”\n\nWe have a School Readiness Checklist & Storybooks in the app. Shall I show you?";
+        if (/\b(school|big school|kindergarten|afraid to go|separation anxiety|cry when leave)\b/i.test(msg)) {
+            return "Starting school is a big milestone!\n\nTo help:\n• Visit the school together beforehand\n• Practice short goodbyes\n• Create a goodbye ritual (special hug + kiss)\n• Photo of family in their bag\n• Read books like 'The Kissing Hand'\n\nWe have a School Readiness Checklist & Storybooks in the app. Shall I show you?";
         }
 
         // 10. Potty Training
-        if (/(potty training|toilet|diaper|pee|poop|accident)/i.test(msg)) {
+        if (/\b(potty training|toilet|diaper|pee|poop|accident)\b/i.test(msg)) {
             return "Ready for potty training?\n\nSigns of readiness:\n• Stays dry for 2+ hours\n• Tells you when diaper is wet/dirty\n• Can pull pants up/down\n\nTips:\n• Use fun underwear with favorite characters\n• Reward chart with stickers\n• No punishment for accidents\n• Celebrate every success!\n\nWe have a free Potty Training Guide + Reward Chart printable. Want it?";
         }
 
         // 11. Sibling Fighting / Jealousy
-        if (/(sibling|fighting|jealous|new baby|brother|sister|rivals)/i.test(msg)) {
-            return "Sibling rivalry is normal, but peaceful homes are possible!\n\nTry:\n• Special 1-on-1 time with each child\n• No comparison (“You’re smarter” → hurts feelings)\n• Teach conflict words: “Please stop, I don’t like that”\n• Family meetings to solve problems together\n\nWe have a “Peaceful Siblings” workshop every month. Interested?";
+        if (/\b(sibling|fighting|jealous|new baby|brother|sister|rivals)\b/i.test(msg)) {
+            return "Sibling rivalry is normal, but peaceful homes are possible!\n\nTry:\n• Special 1-on-1 time with each child\n• No comparison ('You're smarter' → hurts feelings)\n• Teach conflict words: 'Please stop, I don't like that'\n• Family meetings to solve problems together\n\nWe have a 'Peaceful Siblings' workshop every month. Interested?";
         }
 
         // 12. General Parenting Support
-        if (/(tired|exhausted|overwhelmed|mom guilt|hard|struggling|need help)/i.test(msg)) {
-            return "Parenting is the hardest, most important job — and it’s okay to feel tired sometimes. You are doing better than you think.\n\nTake a deep breath. You’ve got this.\n\nWe have a free Parent Support Community where moms & dads share tips and encouragement daily. Would you like to join? Or would you like a list of self-care ideas for busy parents?";
+        if (/\b(tired|exhausted|overwhelmed|mom guilt|hard|struggling|need help)\b/i.test(msg)) {
+            return "Parenting is the hardest, most important job — and it's okay to feel tired sometimes. You are doing better than you think.\n\nTake a deep breath. You've got this.\n\nWe have a free Parent Support Community where moms & dads share tips and encouragement daily. Would you like to join? Or would you like a list of self-care ideas for busy parents?";
         }
 
         // 13. Services Overview
-        if (/(service|what do you offer|hiraya|what is hiraya)/i.test(msg)) {
+        if (/\b(service|what do you offer|hiraya|what is hiraya)\b/i.test(msg)) {
             return "Hiraya offers loving support for every family:\n\n• Trusted childcare & babysitting\n• Special needs & inclusive care\n• Parenting workshops & support groups\n• Child development consultations\n• Emergency & last-minute care\n• Fun holiday programs\n\nWhich service interests you most?";
         }
 
         // 14. Booking Childcare
-        if (/(book|childcare|babysitter|care|need sitter)/i.test(msg)) {
-            return "I can help you book trusted childcare in seconds!\n\nJust go to the “Booking” tab, choose date/time, and select the type of care you need (regular, special needs, overnight, etc.).\n\nNeed help choosing the right caregiver? Tell me your child’s age and needs — I’ll recommend the best matches!";
+        if (/\b(book|childcare|babysitter|care|need sitter)\b/i.test(msg)) {
+            return "I can help you book trusted childcare in seconds!\n\nJust go to the 'Booking' tab, choose date/time, and select the type of care you need (regular, special needs, overnight, etc.).\n\nNeed help choosing the right caregiver? Tell me your child's age and needs — I'll recommend the best matches!";
+        }
+
+        // 1. Greetings - moved to LAST with more specific pattern
+        if (/^(hello|hi|hey|good morning|good afternoon|good evening)$/i.test(msg)) {
+            return "Hello! I'm Mavi, your virtual assistant. How can I help you today?";
         }
 
         // Default Fallback
@@ -176,158 +152,36 @@ export default function ChatbotScreen() {
             setMessages((prev) => [...prev, reply]);
         }, 800);
 
-        // Optional: Clean up if component unmounts
         return () => clearTimeout(timer);
     };
 
-    // ──────────────────────────────────────────────
-    // All your existing functions (image, file, voice, etc.)
-    // ──────────────────────────────────────────────
-    const pickImage = async () => {
-        const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if (!permissionResult.granted) {
-            Alert.alert("Permission required", "Sorry, we need camera roll permissions!");
-            return;
-        }
+    // Coming soon feature handlers
+    const handleComingSoonFeature = (featureType: string) => {
+        const userMsg: Message = {
+            id: Date.now().toString(),
+            text: `I want to use ${featureType}`,
+            isUser: true,
+            time: timestamp(),
+            type: "text",
+        };
+        setMessages((prev) => [...prev, userMsg]);
 
-        const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Images,
-            allowsEditing: true,
-            quality: 1,
-        });
-
-        if (!result.canceled && result.assets && result.assets[0]) {
-            const uri = result.assets[0].uri;
-            const newMsg: Message = {
-                id: Date.now().toString(),
-                text: "Here's a photo",
-                isUser: true,
+        // AI response about coming soon feature
+        setTimeout(() => {
+            const reply: Message = {
+                id: Date.now().toString() + "-bot",
+                text: `🎉 **${featureType.toUpperCase()}** 🎉\n\nThis exciting feature is coming soon! Our team is working hard to bring you:\n\n• ${featureType} capabilities\n• Enhanced user experience\n• More ways to connect and share\n\nStay tuned for updates! We'll notify you as soon as it's available.`,
+                isUser: false,
                 time: timestamp(),
-                type: "image",
-                imageUri: uri,
+                type: "text",
             };
-            setMessages((prev) => [...prev, newMsg]);
-        }
+            setMessages((prev) => [...prev, reply]);
+        }, 800);
     };
 
-    const pickFile = async () => {
-        try {
-            const result = await DocumentPicker.getDocumentAsync({
-                type: '*/*',
-                copyToCacheDirectory: true,
-                multiple: false,
-            });
-
-            if (result.canceled) return;
-
-            const file = result.assets[0];
-            if (file) {
-                const fileSizeInKB = Math.round((file.size || 0) / 1024);
-                const newMsg: Message = {
-                    id: Date.now().toString(),
-                    text: "Attached a file",
-                    isUser: true,
-                    time: timestamp(),
-                    type: "file",
-                    fileName: file.name,
-                    fileSize: fileSizeInKB,
-                    fileType: file.mimeType || 'Unknown',
-                    fileUri: file.uri,
-                };
-                setMessages((prev) => [...prev, newMsg]);
-
-                Alert.alert("File Attached", `${file.name}\n${fileSizeInKB} KB`);
-            }
-        } catch (error) {
-            Alert.alert("Error", "Failed to pick file.");
-        }
-    };
-
-    const startRecording = async () => {
-        try {
-            const permission = await Audio.requestPermissionsAsync();
-            if (!permission.granted) {
-                Alert.alert("Permission required", "Please grant microphone permission.");
-                return;
-            }
-
-            await Audio.setAudioModeAsync({
-                allowsRecordingIOS: true,
-                playsInSilentModeIOS: true,
-            });
-
-            const { recording } = await Audio.Recording.createAsync(
-                Audio.RecordingOptionsPresets.HIGH_QUALITY
-            );
-            setRecording(recording);
-            setIsRecording(true);
-            setRecordingDuration(0);
-
-            recordingTimerRef.current = setInterval(() => {
-                setRecordingDuration((prev) => prev + 1);
-            }, 1000);
-        } catch (err) {
-            Alert.alert("Error", "Failed to start recording");
-        }
-    };
-
-    const stopRecording = async () => {
-        if (!recording) return;
-
-        if (recordingTimerRef.current) {
-            clearInterval(recordingTimerRef.current);
-            recordingTimerRef.current = null;
-        }
-
-        setIsRecording(false);
-        await recording.stopAndUnloadAsync();
-        const uri = recording.getURI();
-        setRecording(null);
-
-        if (uri) {
-            const newMsg: Message = {
-                id: Date.now().toString(),
-                text: "Voice message",
-                isUser: true,
-                time: timestamp(),
-                type: "voice",
-                voiceUri: uri,
-                duration: recordingDuration,
-            };
-            setMessages((prev) => [...prev, newMsg]);
-            setRecordingDuration(0);
-        }
-    };
-
-    const playSound = async (uri: string) => {
-        try {
-            if (sound) {
-                await sound.unloadAsync();
-            }
-            const { sound: newSound } = await Audio.Sound.createAsync({ uri });
-            setSound(newSound);
-            await newSound.playAsync();
-        } catch (err) {
-            console.error("Playback error", err);
-        }
-    };
-
-    const getFileIcon = (fileType?: string) => {
-        if (!fileType) return "document";
-        if (fileType.includes('pdf')) return "document-text";
-        if (fileType.includes('word') || fileType.includes('doc')) return "document-text";
-        if (fileType.includes('excel') || fileType.includes('sheet')) return "grid";
-        if (fileType.includes('image')) return "image";
-        if (fileType.includes('video')) return "videocam";
-        if (fileType.includes('audio')) return "musical-notes";
-        if (fileType.includes('zip')) return "archive";
-        return "document";
-    };
-
-    const formatFileSize = (sizeInKB?: number) => {
-        if (!sizeInKB) return "Unknown";
-        return sizeInKB < 1024 ? `${sizeInKB} KB` : `${(sizeInKB / 1024).toFixed(1)} MB`;
-    };
+    const pickImage = () => handleComingSoonFeature("image sharing");
+    const pickFile = () => handleComingSoonFeature("file attachment");
+    const startRecording = () => handleComingSoonFeature("voice messages");
 
     const renderMessage = ({ item }: { item: Message }) => (
         <View style={[styles.messageRow, item.isUser ? styles.userRow : styles.otherRow]}>
@@ -339,65 +193,14 @@ export default function ChatbotScreen() {
             )}
 
             <View style={[styles.messageBubble, item.isUser ? styles.userBubble : styles.otherBubble]}>
-                {/* File */}
-                {item.type === "file" && (
-                    <TouchableOpacity style={styles.fileMessage} onPress={() => {
-                        Alert.alert("File Info", `${item.fileName}\n${formatFileSize(item.fileSize)}`);
-                    }}>
-                        <Ionicons name={getFileIcon(item.fileType) as any} size={32} color={item.isUser ? "#fff" : "#4B3C88"} />
-                        <View style={styles.fileInfo}>
-                            <Text style={[styles.fileName, item.isUser ? styles.userFileText : styles.otherFileText]}>
-                                {item.fileName || "File"}
-                            </Text>
-                            <Text style={[styles.fileDetails, item.isUser ? styles.userFileText : styles.otherFileText]}>
-                                {formatFileSize(item.fileSize)} • {item.fileType || 'File'}
-                            </Text>
-                        </View>
-                    </TouchableOpacity>
-                )}
-
-                {/* Image */}
-                {item.type === "image" && item.imageUri && (
-                    <View style={styles.imageMessage}>
-                        <Image source={{ uri: item.imageUri }} style={styles.messageImage} />
-                        {item.text && <Text style={[styles.imageCaption, item.isUser ? styles.userImageCaption : styles.otherImageCaption]}>{item.text}</Text>}
-                    </View>
-                )}
-
-                {/* Voice */}
-                {item.type === "voice" && (
-                    <TouchableOpacity
-                        style={[styles.voiceMessage, item.isUser ? styles.userVoiceMessage : styles.otherVoiceMessage]}
-                        onPress={() => item.voiceUri && playSound(item.voiceUri)}
-                    >
-                        {item.isUser ? (
-                            <>
-                                <Text style={styles.voiceDuration}>{item.duration ?? 0}s</Text>
-                                <View style={styles.voiceWaveform}>
-                                    {[8, 12, 16, 12, 8].map((h, i) => (
-                                        <View key={i} style={[styles.voiceBar, { height: h }]} />
-                                    ))}
-                                </View>
-                                <Ionicons name="mic" size={20} color="#fff" />
-                            </>
-                        ) : (
-                            <>
-                                <Ionicons name="mic" size={20} color="#4B3C88" />
-                                <View style={styles.voiceWaveform}>
-                                    {[8, 12, 16, 12, 8].map((h, i) => (
-                                        <View key={i} style={[styles.voiceBar, { height: h }]} />
-                                    ))}
-                                </View>
-                                <Text style={styles.voiceDuration}>{item.duration ?? 0}s</Text>
-                            </>
-                        )}
-                    </TouchableOpacity>
-                )}
-
                 {/* Text */}
-                {item.type === "text" && <Text style={[styles.messageText, item.isUser ? styles.userMessageText : styles.otherMessageText]}>{item.text}</Text>}
+                <Text style={[styles.messageText, item.isUser ? styles.userMessageText : styles.otherMessageText]}>
+                    {item.text}
+                </Text>
 
-                <Text style={[styles.messageTime, item.isUser ? styles.userMessageTime : styles.otherMessageTime]}>{item.time}</Text>
+                <Text style={[styles.messageTime, item.isUser ? styles.userMessageTime : styles.otherMessageTime]}>
+                    {item.time}
+                </Text>
             </View>
 
             {item.isUser && <View style={styles.chatbotImagePlaceholder} />}
@@ -433,15 +236,6 @@ export default function ChatbotScreen() {
                 <Text style={styles.disclaimerText}>M.A.V.I can make mistakes. Check important information.</Text>
             </View>
 
-            {/* RECORDING INDICATOR */}
-            {isRecording && (
-                <View style={styles.recordingIndicator}>
-                    <Ionicons name="mic" size={16} color="#fff" />
-                    <Text style={styles.recordingText}>Recording... {recordingDuration}s</Text>
-                    <View style={styles.recordingDot} />
-                </View>
-            )}
-
             {/* INPUT BAR */}
             <View style={styles.inputContainer}>
                 <TouchableOpacity onPress={pickFile} style={styles.iconButton}>
@@ -452,8 +246,8 @@ export default function ChatbotScreen() {
                     <Ionicons name="image" size={24} color="#4B3C88" />
                 </TouchableOpacity>
 
-                <TouchableOpacity onPress={isRecording ? stopRecording : startRecording} style={[styles.iconButton, isRecording && styles.recordingButton]}>
-                    <Ionicons name={isRecording ? "stop-circle" : "mic"} size={24} color={isRecording ? "#FF6B6B" : "#4B3C88"} />
+                <TouchableOpacity onPress={startRecording} style={styles.iconButton}>
+                    <Ionicons name="mic" size={24} color="#4B3C88" />
                 </TouchableOpacity>
 
                 <TextInput
@@ -483,7 +277,7 @@ export default function ChatbotScreen() {
     );
 }
 
-// ────────────── STYLES (unchanged) ──────────────
+// ────────────── CLEANED STYLES ──────────────
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: "#F4EDFF" },
     header: {
@@ -522,26 +316,6 @@ const styles = StyleSheet.create({
     userMessageTime: { color: "rgba(255,255,255,0.7)" },
     otherMessageTime: { color: "#666" },
 
-    imageMessage: { alignItems: "center" },
-    messageImage: { width: 200, height: 150, borderRadius: 12, marginBottom: 6 },
-    imageCaption: { fontSize: 12, marginTop: 2, textAlign: "center" },
-    userImageCaption: { color: "rgba(255,255,255,0.8)" },
-    otherImageCaption: { color: "#666" },
-
-    voiceMessage: { flexDirection: "row", alignItems: "center", padding: 8 },
-    userVoiceMessage: { flexDirection: "row-reverse" },
-    otherVoiceMessage: { flexDirection: "row" },
-    voiceWaveform: { flexDirection: "row", alignItems: "center", marginHorizontal: 12 },
-    voiceBar: { width: 3, backgroundColor: "#fff", marginHorizontal: 1, borderRadius: 2 },
-    voiceDuration: { fontSize: 12, color: "#fff", fontWeight: "500" },
-
-    fileMessage: { flexDirection: "row", alignItems: "center", padding: 8, minWidth: 200 },
-    fileInfo: { flex: 1, marginLeft: 12 },
-    fileName: { fontSize: 14, fontWeight: "bold", marginBottom: 2 },
-    fileDetails: { fontSize: 12, marginBottom: 4, opacity: 0.8 },
-    userFileText: { color: "#fff" },
-    otherFileText: { color: "#333" },
-
     disclaimerContainer: { paddingHorizontal: 16, paddingVertical: 8, alignItems: "center" },
     disclaimerText: { fontSize: 12, color: "#666", textAlign: "center", fontStyle: "italic" },
 
@@ -554,7 +328,6 @@ const styles = StyleSheet.create({
         borderTopColor: "#DDD",
     },
     iconButton: { marginRight: 10, padding: 8, backgroundColor: "#F4EDFF", borderRadius: 20 },
-    recordingButton: { backgroundColor: "#FFE6E6" },
     textInput: {
         flex: 1,
         backgroundColor: "#F4EDFF",
@@ -573,16 +346,6 @@ const styles = StyleSheet.create({
         justifyContent: "center",
         alignItems: "center",
     },
-
-    recordingIndicator: {
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "center",
-        backgroundColor: "#FF6B6B",
-        padding: 12,
-    },
-    recordingText: { color: "#fff", fontSize: 14, marginLeft: 8, marginRight: 12, fontWeight: "500" },
-    recordingDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#fff" },
 
     bottomNav: {
         flexDirection: "row",
