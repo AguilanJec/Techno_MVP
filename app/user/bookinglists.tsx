@@ -25,6 +25,8 @@ import {
     DocumentData,
     doc,
     getDoc,
+    getDocs,
+    addDoc,
 } from 'firebase/firestore';
 
 type Booking = {
@@ -46,6 +48,61 @@ const MyBookingsListScreen: React.FC = () => {
     const [selectedTab, setSelectedTab] = useState<'All' | 'Pending' | 'Accepted' | 'Completed'>('All');
     const [bookings, setBookings] = useState<Booking[]>([]);
     const [loading, setLoading] = useState(true);
+
+    // Add the startConversation function from details.tsx
+    const startConversation = async (providerId: string, providerName: string) => {
+        const auth = getAuth();
+        if (!providerId || !auth.currentUser) return;
+
+        try {
+            const currentUser = auth.currentUser;
+
+            // Check if conversation already exists
+            const existingConvQuery = query(
+                collection(db, "conversations"),
+                where("participants", "array-contains", currentUser.uid)
+            );
+
+            const querySnapshot = await getDocs(existingConvQuery);
+            let existingConversation: any = null;
+
+            querySnapshot.forEach((doc) => {
+                const conversation = doc.data();
+                if (conversation.participants.includes(providerId)) {
+                    existingConversation = { id: doc.id, ...conversation };
+                }
+            });
+
+            if (existingConversation) {
+                router.push(
+                    `/chat?conversationId=${existingConversation.id}&providerName=${encodeURIComponent(
+                        providerName
+                    )}&providerId=${providerId}`
+                );
+            } else {
+                const newConversation = {
+                    participants: [currentUser.uid, providerId],
+                    participantNames: [currentUser.displayName || "User", providerName],
+                    lastMessage: "Conversation started",
+                    lastMessageTime: new Date(),
+                    unread: false,
+                    lastMessageSender: currentUser.uid,
+                };
+
+                const docRef = await addDoc(
+                    collection(db, "conversations"),
+                    newConversation
+                );
+                router.push(
+                    `/chat?conversationId=${docRef.id}&providerName=${encodeURIComponent(
+                        providerName
+                    )}&providerId=${providerId}`
+                );
+            }
+        } catch (error) {
+            console.error("Error starting conversation:", error);
+        }
+    };
 
     useEffect(() => {
         const auth = getAuth();
@@ -355,8 +412,10 @@ const MyBookingsListScreen: React.FC = () => {
                                         style={styles.messageBtn}
                                         onPress={() => {
                                             if (b.providerId) {
-                                                router.push({ pathname: '/message', params: { providerId: b.providerId } });
+                                                // Use the startConversation function instead of going directly to message
+                                                startConversation(b.providerId, b.name);
                                             } else {
+                                                // Fallback if no providerId
                                                 router.push('/message');
                                             }
                                         }}
