@@ -9,6 +9,7 @@ import {
     FlatList,
     Dimensions,
     ActivityIndicator,
+    Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -38,6 +39,7 @@ interface Booking {
     status?: string;
     type?: string;
     raw?: DocumentData;
+    userId?: string;
 }
 
 interface StatCard {
@@ -55,6 +57,13 @@ export default function ServiceHome() {
     const [loading, setLoading] = useState(true);
     const [user, setUser] = useState<User | null>(null);
 
+    // provider data & picture (for header)
+    const [providerData, setProviderData] = useState<any>(null);
+    const [providerPictureUri, setProviderPictureUri] = useState<string | null>(null);
+
+    // userCache holds fetched user documents to avoid repeated reads
+    const [userCache, setUserCache] = useState<Record<string, { name?: string; picture?: string }>>({});
+
     // Listen for auth state to get current provider UID
     useEffect(() => {
         const unsubAuth = onAuthStateChanged(auth, (u) => {
@@ -63,10 +72,67 @@ export default function ServiceHome() {
         return () => unsubAuth();
     }, []);
 
+    // sanitize base64 -> data uri
+    const getSanitizedPictureUri = (raw?: string) => {
+        if (!raw) return null;
+
+        let trimmed = raw.trim();
+
+        // Remove `url(...)` wrapper if present
+        const urlMatch = trimmed.match(/^url\(["']?(.*?)["']?\)$/i);
+        if (urlMatch) {
+            trimmed = urlMatch[1];
+        }
+
+        // Too short to be valid image
+        if (trimmed.length < 20) return null;
+
+        // Already proper data URI
+        if (/^data:image\/[a-zA-Z]+;base64,/.test(trimmed)) {
+            return trimmed;
+        }
+
+        // Remote URL
+        if (/^https?:\/\//.test(trimmed)) return trimmed;
+
+        // Otherwise assume raw base64, default to jpeg
+        return `data:image/jpeg;base64,${trimmed}`;
+    };
+
+    // fetch single user doc and cache it
+    const fetchAndCacheUser = async (userId: string) => {
+        if (!userId) return;
+        // don't refetch if cached
+        if (userCache[userId]) return;
+
+        try {
+            const uDoc = await getDoc(doc(db, "users", userId));
+            if (uDoc.exists()) {
+                const d = uDoc.data();
+                const name = d?.name || d?.email || "Parent";
+                const picture = typeof d?.picture === "string" ? d.picture : undefined;
+                setUserCache((prev) => ({ ...prev, [userId]: { name, picture } }));
+                console.log(`[fetchAndCacheUser] cached ${userId}: name=${name}, pictureLen=${picture ? picture.length : "none"}`);
+                // update bookings with newly fetched name if present
+                setBookings((prev) =>
+                    prev.map((b) => (b.userId === userId ? { ...b, parentName: name } : b))
+                );
+            } else {
+                // no user doc found
+                setUserCache((prev) => ({ ...prev, [userId]: { name: undefined, picture: undefined } }));
+                console.log(`[fetchAndCacheUser] no user doc for ${userId}`);
+            }
+        } catch (err) {
+            console.error("fetchAndCacheUser error:", err);
+        }
+    };
+
     // When user changes, load provider and appointments
     useEffect(() => {
         if (!user) {
             setProviderName(null);
+            setProviderData(null);
+            setProviderPictureUri(null);
             setBookings([]);
             setStats([]);
             setLoading(false);
@@ -80,7 +146,6 @@ export default function ServiceHome() {
             setLoading(true);
             try {
                 // === Load provider document ===
-                // Adjust collection name if you call it "providers" or something else
                 const providerRef = doc(db, "providers", user.uid);
                 const providerSnap = await getDoc(providerRef);
 
@@ -90,7 +155,6 @@ export default function ServiceHome() {
                 if (providerSnap.exists()) {
                     const data = providerSnap.data();
                     if (data?.name) name = data.name;
-                    // compute average rating from provider's reviews array (if present)
                     if (Array.isArray(data?.reviews) && data.reviews.length > 0) {
                         const sum = data.reviews.reduce((acc: number, r: any) => {
                             const rating = typeof r?.rating === "number" ? r.rating : Number(r?.rating) || 0;
@@ -103,8 +167,15 @@ export default function ServiceHome() {
                     } else {
                         avgRating = "—";
                     }
+
+                    // store provider data & picture URI for header
+                    setProviderData(data);
+                    const pUri = getSanitizedPictureUri(data?.picture);
+                    setProviderPictureUri(pUri);
                 } else {
                     avgRating = "—";
+                    setProviderData(null);
+                    setProviderPictureUri(null);
                 }
 
                 setProviderName(name);
@@ -117,33 +188,65 @@ export default function ServiceHome() {
                     (querySnap) => {
                         if (cancelled) return;
                         const docs: Booking[] = [];
+                        const missingUserIds = new Set<string>();
+
                         querySnap.forEach((docSnap) => {
                             const data = docSnap.data();
-                            // Filter out completed appointments (keep upcoming/pending/confirmed)
-                            if (data?.status && data.status.toLowerCase() === "completed" || data?.status && data.status.toLowerCase() === "cancelled") {
+                            // NOTE: original code filtered out completed/cancelled; keep that behavior
+                            const statusLower = typeof data?.status === "string" ? data.status.toLowerCase() : "";
+                            if (statusLower === "completed" || statusLower === "cancelled") {
                                 return;
                             }
 
                             // Build sensible display fields from the sample shape you supplied
-                            const parentName = data.userEmail || data.userId || data.parentName || "Parent";
+                            const rawUserId = data?.userId || null;
+                            // parentName fallback: try userEmail first, then userId then "Parent"
+                            const fallbackParentName = data?.userEmail || rawUserId || "Parent";
+
                             let dateLabel = data?.schedule?.name || data?.date || "";
+                            let timeLabel = data?.time || "";
                             if (!dateLabel) {
-                                // fallback to time fields
                                 if (data?.hour12 !== undefined && data?.minute !== undefined && data?.ampm) {
                                     dateLabel = `${data.hour12}:${String(data.minute).padStart(2, "0")} ${data.ampm}`;
                                 }
                             }
-                            const location = data?.location || data?.address || "";
+
+                            if (data?.appointmentType === "one_time") {
+                                const startHour = data?.startTime?.hour12;
+                                const startMinute = data?.startTime?.minute;
+                                const startAmPm = data?.startTime?.ampm;
+
+                                const endHour = data?.endTime?.hour12;
+                                const endMinute = data?.endTime?.minute;
+                                const endAmPm = data?.endTime?.ampm;
+
+                                if (
+                                    startHour !== undefined &&
+                                    startMinute !== undefined &&
+                                    startAmPm &&
+                                    endHour !== undefined &&
+                                    endMinute !== undefined &&
+                                    endAmPm
+                                ) {
+                                    timeLabel = `${startHour}:${String(startMinute).padStart(2, "0")} ${startAmPm} - ${endHour}:${String(endMinute).padStart(2, "0")} ${endAmPm}`;
+                                }
+                            }
+                            const location = data?.location || data?.address || data?.place || "";
+
                             const booking: Booking = {
                                 id: docSnap.id,
-                                parentName,
+                                parentName: fallbackParentName,
                                 dateLabel,
-                                timeLabel: data?.time || undefined,
+                                timeLabel,
                                 location,
                                 status: data?.status || "pending",
                                 type: data?.appointmentType || data?.role || "service",
                                 raw: data,
+                                userId: rawUserId || undefined,
                             };
+
+                            if (rawUserId && !userCache[rawUserId]) missingUserIds.add(rawUserId);
+
                             docs.push(booking);
                         });
 
@@ -155,6 +258,9 @@ export default function ServiceHome() {
                         });
 
                         setBookings(docs);
+
+                        // fetch missing users (cache) asynchronously
+                        missingUserIds.forEach((uid) => fetchAndCacheUser(uid));
 
                         // === Build stats: Total Bookings & Avg Rating & Upcoming Bookings ===
                         const totalBookings = docs.length.toString();
@@ -202,7 +308,7 @@ export default function ServiceHome() {
             cancelled = true;
             if (unsubAppointments) unsubAppointments();
         };
-    }, [user]);
+    }, [user, userCache]); // include userCache only to ensure fetch logic sees changes (fetchAndCacheUser guards duplicate fetches)
 
     const renderStatCard = ({ item }: { item: StatCard }) => (
         <TouchableOpacity style={[styles.statCard, { backgroundColor: item.color }]}>
@@ -216,17 +322,34 @@ export default function ServiceHome() {
 
     const renderBooking = ({ item }: { item: Booking }) => {
         let statusColor = "#8e44ad";
-        if (item.status === "pending") statusColor = "#f39c12";
-        if (item.status === "completed") statusColor = "#27ae60";
+        const statusLower = item.status?.toLowerCase() || "";
+        if (statusLower === "pending") statusColor = "#f39c12";
+        if (statusLower === "completed") statusColor = "#27ae60";
+
+        // prefer cached user name if available
+        const cached = item.userId ? userCache[item.userId] : undefined;
+        const displayName = cached?.name || item.parentName || "Parent";
+        const pictureUri = getSanitizedPictureUri(cached?.picture);
+
         return (
             <TouchableOpacity
                 style={styles.bookingCard}
                 onPress={() => router.push(`/service/service_booking_details?bookingId=${item.id}`)}
             >
                 <View style={styles.bookingHeader}>
-                    <Ionicons name="person-circle-outline" size={40} color="#b58dde" />
+                    {pictureUri ? (
+                        <Image
+                            source={{ uri: pictureUri }}
+                            style={styles.avatarImage}
+                            onError={(e) => console.error("Avatar image error:", e.nativeEvent)}
+                            resizeMode="cover"
+                        />
+                    ) : (
+                        <Ionicons name="person-circle-outline" size={40} color="#b58dde" />
+                    )}
+
                     <View style={styles.bookingInfo}>
-                        <Text style={styles.parentName}>{item.parentName}</Text>
+                        <Text style={styles.parentName}>{displayName}</Text>
                         <Text style={styles.bookingDate}>
                             {item.dateLabel} {item.timeLabel ? `| ${item.timeLabel}` : ""}
                         </Text>
@@ -268,8 +391,20 @@ export default function ServiceHome() {
                     <Text style={styles.greeting}>Hi, {providerName ?? "there"}!</Text>
                     <Text style={styles.welcome}>Welcome back!</Text>
                 </View>
-                <TouchableOpacity onPress={() => router.push("/user/account")} style={styles.profileIcon}>
-                    <Ionicons name="person-circle-outline" size={40} color="#fff" />
+
+                <TouchableOpacity onPress={() => router.push("/service/service_account")} style={styles.profileIcon}>
+                    {providerPictureUri ? (
+                        <Image
+                            source={{ uri: providerPictureUri }}
+                            style={styles.headerProfileImage}
+                            resizeMode="cover"
+                            onError={(e) => {
+                                console.error("Provider header image error:", e.nativeEvent);
+                            }}
+                        />
+                    ) : (
+                        <Ionicons name="person-circle-outline" size={40} color="#fff" />
+                    )}
                 </TouchableOpacity>
             </View>
 
@@ -338,7 +473,7 @@ export default function ServiceHome() {
     );
 }
 
-// Keep your styles — unchanged except spacing for ActivityIndicator
+
 const styles = StyleSheet.create({
     container: {
         flex: 1,
@@ -366,6 +501,13 @@ const styles = StyleSheet.create({
     },
     profileIcon: {
         marginLeft: 10,
+    },
+    // header profile image for top-right (small)
+    headerProfileImage: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: "#eee",
     },
     locationCard: {
         flexDirection: "row",
@@ -453,6 +595,12 @@ const styles = StyleSheet.create({
         flexDirection: "row",
         alignItems: "center",
         marginBottom: 10,
+    },
+    avatarImage: {
+        width: 48,
+        height: 48,
+        borderRadius: 24,
+        backgroundColor: "#eee",
     },
     bookingInfo: {
         flex: 1,

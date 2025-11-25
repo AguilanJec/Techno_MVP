@@ -123,6 +123,27 @@ const Home = () => {
         return null;
     };
 
+    const [userPicture, setUserPicture] = useState<string | null>(null);
+
+    useEffect(() => {
+        const fetchUser = async () => {
+            const auth = getAuth();
+            const user = auth.currentUser;
+            if (user) {
+                const q = query(collection(db, "users"), where("email", "==", user.email));
+                const userSnap = await getDocs(q);
+                if (!userSnap.empty) {
+                    const uDoc = userSnap.docs[0].data() as any;
+                    if (uDoc.picture) {
+                        setUserPicture(getPictureUri(uDoc.picture));
+                    }
+                }
+            }
+        };
+        fetchUser();
+    }, []);
+
+
     // Fetch data
     useEffect(() => {
         const fetchAll = async () => {
@@ -353,7 +374,11 @@ const Home = () => {
                     onPress={() => router.push("/user/account")}
                     style={styles.profileIcon}
                 >
-                    <Ionicons name="person-circle-outline" size={40} color="#fff" />
+                    {userPicture ? (
+                        <Image source={{ uri: userPicture }} style={styles.avatar} resizeMode="cover" />
+                    ) : (
+                        <Ionicons name="person-circle-outline" size={40} color="#fff" />
+                    )}
                 </TouchableOpacity>
             </View>
 
@@ -376,11 +401,11 @@ const Home = () => {
                 {/* No service Planned */}
                 <View style={styles.servicePlannedCard}>
                     <View style={styles.servicePlannedLeft}>
-                        <Text style={styles.noServiceText}>No Service planned</Text>
+                        <Text style={styles.noServiceText}>Book Services Now!</Text>
                     </View>
                     <TouchableOpacity
                         style={styles.scheduleButton}
-                        onPress={() => router.push("/schedule")}
+                        onPress={() => router.push("/user/search")}
                     >
                         <Text style={styles.scheduleButtonText}>Schedule</Text>
                     </TouchableOpacity>
