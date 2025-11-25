@@ -1,4 +1,3 @@
-// app/service/service_bookings.tsx
 import React, { useState, useEffect } from "react";
 import {
     View,
@@ -13,7 +12,7 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { auth, db } from "../../firebaseConfig"; // Adjust path if needed
+import { auth, db } from "../../firebaseConfig";
 import { onAuthStateChanged } from "firebase/auth";
 import {
     collection,
@@ -24,9 +23,14 @@ import {
     doc,
     getDoc,
     updateDoc,
-    Timestamp,
+    Timestamp, addDoc, getDocs,
 } from "firebase/firestore";
 
+interface UserData {
+    name: string;
+    email: string;
+    phone: string;
+}
 
 function formatTimeField(t: any) {
     try {
@@ -100,9 +104,9 @@ type Appointment = {
     providerName?: string;
     status: AppointmentStatus;
     serviceType: string;
-    bookingDate: string; // normalized string (formatted)
-    startTime: string; // normalized string
-    endTime: string; // normalized string
+    bookingDate: string;
+    startTime: string;
+    endTime: string;
     notes: string;
     totalAmount: number;
     createdAt: Timestamp | any;
@@ -119,6 +123,28 @@ const ServiceBookingsScreen: React.FC = () => {
     const [currentProviderId, setCurrentProviderId] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState("");
     const [selectedTab, setSelectedTab] = useState<"All" | "Pending" | "Ongoing" | "Completed" | "Cancelled">("All");
+
+    // Function to fetch user details
+    const fetchUserDetails = async (userId: string) => {
+        try {
+            const userDoc = await getDoc(doc(db, "users", userId));
+            if (userDoc.exists()) {
+                const userData = userDoc.data() as UserData;
+                return {
+                    name: userData.name || "Unknown User",
+                    email: userData.email || "N/A",
+                    phone: userData.phone || "N/A"
+                };
+            }
+        } catch (error) {
+            console.error("Error fetching user details:", error);
+        }
+        return {
+            name: "Unknown User",
+            email: "N/A",
+            phone: "N/A"
+        };
+    };
 
     useEffect(() => {
         const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
@@ -144,21 +170,18 @@ const ServiceBookingsScreen: React.FC = () => {
                             // normalize/format fields so UI never sees raw objects
                             const formattedBookingDate = formatBookingDateField(data.bookingDate ?? data.date ?? data.schedule ?? null);
                             const formattedStartTime = formatTimeField(data.startTime ?? (data.schedule?.startTime) ?? (data.startTime) ?? { hour12: data.hour12, minute: data.minute, ampm: data.ampm });
-                            // calculate endTime if provided or compute using durationHours
+
                             let formattedEndTime = formatTimeField(data.endTime ?? data.finishTime ?? null);
                             if ((!formattedEndTime || formattedEndTime === "—") && data.startTime && data.durationHours) {
-                                // attempt compute end time by adding duration
                                 try {
-                                    // start might be an object; use formatTimeField then parse approx hours (not perfect but safe)
                                     const dHours = safeNumber(data.durationHours);
-                                    // if startTime is an object with hour12/minute/ampm compute using helper
-                                    // but to keep it simple here, use existing helper from your other files if available
                                     formattedEndTime = formatTimeField(data.endTime) !== "—" ? formatTimeField(data.endTime) : "—";
                                 } catch {
                                     formattedEndTime = "—";
                                 }
                             }
 
+                            // Create initial booking with available data
                             const booking: Appointment = {
                                 id: bookingId,
                                 userId: data.userId,
@@ -181,25 +204,20 @@ const ServiceBookingsScreen: React.FC = () => {
 
                             fetched.push(booking);
 
-                            // If user details not present, queue fetch from users collection
-                            if (!data.userName || !data.userEmail || !data.userPhone) {
+                            // Always fetch user details to ensure we have the correct name
+                            if (data.userId) {
                                 const p = (async () => {
                                     try {
-                                        if (data.userId) {
-                                            const u = await getDoc(doc(db, "users", data.userId));
-                                            if (u.exists()) {
-                                                const ud = u.data() as any;
-                                                const idx = fetched.findIndex(b => b.id === bookingId);
-                                                if (idx !== -1) {
-                                                    fetched[idx] = {
-                                                        ...fetched[idx],
-                                                        userName: ud.name || fetched[idx].userName,
-                                                        userEmail: ud.email || fetched[idx].userEmail,
-                                                        userPhone: ud.phone || fetched[idx].userPhone,
-                                                    };
-                                                    fetched[idx].searchTerms = `${fetched[idx].userName} ${fetched[idx].userEmail} ${fetched[idx].status} ${fetched[idx].serviceType} ${fetched[idx].bookingDate}`.toLowerCase();
-                                                }
-                                            }
+                                        const userDetails = await fetchUserDetails(data.userId);
+                                        const idx = fetched.findIndex(b => b.id === bookingId);
+                                        if (idx !== -1) {
+                                            fetched[idx] = {
+                                                ...fetched[idx],
+                                                userName: userDetails.name,
+                                                userEmail: userDetails.email,
+                                                userPhone: userDetails.phone,
+                                            };
+                                            fetched[idx].searchTerms = `${fetched[idx].userName} ${fetched[idx].userEmail} ${fetched[idx].status} ${fetched[idx].serviceType} ${fetched[idx].bookingDate}`.toLowerCase();
                                         }
                                     } catch (err) {
                                         console.error("Error fetching user for booking", bookingId, err);
@@ -310,6 +328,69 @@ const ServiceBookingsScreen: React.FC = () => {
         }
     };
 
+    // Function to handle message button press
+    const handleMessagePress = async (booking: Appointment) => {
+        if (!booking.userId || !booking.userName) {
+            Alert.alert("Error", "Cannot message this user - missing user information");
+            return;
+        }
+
+        try {
+            // Check if conversation already exists
+            const conversationsQuery = query(
+                collection(db, "conversations"),
+                where("participants", "array-contains", currentProviderId)
+            );
+
+            const conversationsSnapshot = await getDocs(conversationsQuery);
+            let existingConversationId = null;
+
+            conversationsSnapshot.forEach((doc) => {
+                const data = doc.data();
+                if (data.participants.includes(booking.userId)) {
+                    existingConversationId = doc.id;
+                }
+            });
+
+            if (existingConversationId) {
+                // Navigate to existing conversation
+                router.push({
+                    pathname: "/chat",
+                    params: {
+                        conversationId: existingConversationId,
+                        otherUserName: booking.userName,
+                        otherUserId: booking.userId,
+                        userType: "customer"
+                    }
+                });
+            } else {
+                // Create new conversation
+                const newConversation = {
+                    participants: [currentProviderId, booking.userId],
+                    participantNames: [currentProviderId, booking.userName],
+                    lastMessage: "Conversation started from booking",
+                    lastMessageTime: new Date(),
+                    unread: false,
+                    lastMessageSender: currentProviderId
+                };
+
+                const docRef = await addDoc(collection(db, "conversations"), newConversation);
+                router.push({
+                    pathname: "/chat",
+                    params: {
+                        conversationId: docRef.id,
+                        otherUserName: booking.userName,
+                        otherUserId: booking.userId,
+                        userType: "customer"
+                    }
+                });
+            }
+        } catch (error) {
+            console.error("Error handling message:", error);
+            Alert.alert("Error", "Failed to start conversation. Please try again.");
+        }
+    };
+
     if (loading) {
         return (
             <View style={styles.centered}>
@@ -369,7 +450,6 @@ const ServiceBookingsScreen: React.FC = () => {
             </View>
 
             {/* Bookings list */}
-            {/* Bookings list */}
             <ScrollView
                 style={styles.scrollContainer}
                 contentContainerStyle={styles.scrollContent}
@@ -390,7 +470,7 @@ const ServiceBookingsScreen: React.FC = () => {
                         <View key={booking.id} style={styles.bookingCard}>
                             {/* Make the card content clickable */}
                             <TouchableOpacity
-                                style={{ flex: 1 }} // makes the touchable fill the card except buttons
+                                style={{ flex: 1 }}
                                 onPress={() => router.push(`../service/service_booking_details?bookingId=${booking.id}`)}
                                 activeOpacity={0.8}
                             >
@@ -417,6 +497,14 @@ const ServiceBookingsScreen: React.FC = () => {
                                         <Text style={styles.detailValue}>{booking.userName}</Text>
                                     </View>
                                     <View style={styles.detailRow}>
+                                        <Text style={styles.detailLabel}>Email:</Text>
+                                        <Text style={styles.detailValue}>{booking.userEmail}</Text>
+                                    </View>
+                                    <View style={styles.detailRow}>
+                                        <Text style={styles.detailLabel}>Phone:</Text>
+                                        <Text style={styles.detailValue}>{booking.userPhone}</Text>
+                                    </View>
+                                    <View style={styles.detailRow}>
                                         <Text style={styles.detailLabel}>Date:</Text>
                                         <Text style={styles.detailValue}>{booking.bookingDate}</Text>
                                     </View>
@@ -426,12 +514,16 @@ const ServiceBookingsScreen: React.FC = () => {
                                     </View>
                                     <View style={styles.detailRow}>
                                         <Text style={styles.detailLabel}>Amount:</Text>
-                                        <Text style={styles.detailValue}>₱{booking.totalAmount}</Text>
+                                        <Text style={styles.detailValue}>₱{booking.totalAmount.toFixed(2)}</Text>
+                                    </View>
+                                    <View style={styles.detailRow}>
+                                        <Text style={styles.detailLabel}>Notes:</Text>
+                                        <Text style={styles.detailValue}>{booking.notes}</Text>
                                     </View>
                                 </View>
                             </TouchableOpacity>
 
-                            {/* Action Buttons (still fully clickable) */}
+                            {/* Action Buttons */}
                             <View style={styles.actionButtons}>
                                 {booking.status === "pending" && (
                                     <>
@@ -467,7 +559,7 @@ const ServiceBookingsScreen: React.FC = () => {
                                 )}
                                 <TouchableOpacity
                                     style={[styles.actionButton, styles.messageButton]}
-                                    onPress={() => router.push(`../service_chat?userId=${booking.userId}&userName=${encodeURIComponent(booking.userName)}`)}
+                                    onPress={() => handleMessagePress(booking)}
                                 >
                                     <Text style={styles.actionButtonText}>Message</Text>
                                 </TouchableOpacity>
@@ -476,7 +568,6 @@ const ServiceBookingsScreen: React.FC = () => {
                     ))
                 )}
             </ScrollView>
-
 
             {/* Bottom nav */}
             <View style={styles.bottomNav}>
@@ -506,12 +597,15 @@ const styles = StyleSheet.create({
     },
     header: {
         backgroundColor: "#b58dde",
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "space-between",
+        flexDirection: "row" as const,
+        alignItems: "center" as const,
+        justifyContent: "space-between" as const,
         paddingHorizontal: 16,
         paddingVertical: 12,
         paddingTop: 45,
+    },
+    backButton: {
+        padding: 5,
     },
     headerTitle: {
         color: "#fff",
@@ -519,8 +613,8 @@ const styles = StyleSheet.create({
         fontWeight: "bold",
     },
     searchContainer: {
-        flexDirection: "row",
-        alignItems: "center",
+        flexDirection: "row" as const,
+        alignItems: "center" as const,
         backgroundColor: "#f5f5f5",
         marginHorizontal: 16,
         marginVertical: 10,
@@ -536,8 +630,8 @@ const styles = StyleSheet.create({
         fontSize: 16,
     },
     tabs: {
-        flexDirection: "row",
-        justifyContent: "space-around",
+        flexDirection: "row" as const,
+        justifyContent: "space-around" as const,
         backgroundColor: "#f8f8f8",
         paddingVertical: 10,
     },
@@ -566,13 +660,13 @@ const styles = StyleSheet.create({
     },
     centered: {
         flex: 1,
-        justifyContent: "center",
-        alignItems: "center",
+        justifyContent: "center" as const,
+        alignItems: "center" as const,
         backgroundColor: "#fff",
     },
     emptyState: {
-        alignItems: "center",
-        justifyContent: "center",
+        alignItems: "center" as const,
+        justifyContent: "center" as const,
         paddingVertical: 60,
     },
     emptyStateText: {
@@ -584,7 +678,7 @@ const styles = StyleSheet.create({
     emptyStateSubText: {
         fontSize: 14,
         color: "#999",
-        textAlign: "center",
+        textAlign: "center" as const,
         marginTop: 8,
     },
     bookingCard: {
@@ -599,15 +693,17 @@ const styles = StyleSheet.create({
         elevation: 3,
     },
     bookingHeader: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
+        flexDirection: "row" as const,
+        justifyContent: "space-between" as const,
+        alignItems: "center" as const,
         marginBottom: 12,
     },
     bookingTitle: {
         fontSize: 18,
         fontWeight: "bold",
         color: "#333",
+        flex: 1,
+        marginRight: 10,
     },
     statusBadge: {
         paddingHorizontal: 10,
@@ -628,8 +724,8 @@ const styles = StyleSheet.create({
         marginBottom: 16,
     },
     detailRow: {
-        flexDirection: "row",
-        justifyContent: "space-between",
+        flexDirection: "row" as const,
+        justifyContent: "space-between" as const,
         marginBottom: 8,
     },
     detailLabel: {
@@ -642,18 +738,20 @@ const styles = StyleSheet.create({
         fontSize: 14,
         color: "#333",
         flex: 1,
-        textAlign: "right",
+        textAlign: "right" as const,
     },
     actionButtons: {
-        flexDirection: "row",
-        justifyContent: "space-between",
+        flexDirection: "row" as const,
+        justifyContent: "space-between" as const,
+        flexWrap: "wrap" as const,
     },
     actionButton: {
-        flex: 1,
         paddingVertical: 10,
         borderRadius: 8,
-        alignItems: "center",
+        alignItems: "center" as const,
         marginHorizontal: 2,
+        marginBottom: 5,
+        minWidth: 80,
     },
     acceptButton: {
         backgroundColor: "#27ae60",
@@ -676,13 +774,13 @@ const styles = StyleSheet.create({
         fontSize: 14,
     },
     bottomNav: {
-        position: "absolute",
+        position: "absolute" as const,
         bottom: 0,
         left: 0,
         right: 0,
-        flexDirection: "row",
-        justifyContent: "space-around",
-        alignItems: "center",
+        flexDirection: "row" as const,
+        justifyContent: "space-around" as const,
+        alignItems: "center" as const,
         paddingVertical: 10,
         borderTopWidth: 1,
         borderColor: "#eee",

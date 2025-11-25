@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { collection, query, where, onSnapshot, orderBy } from "firebase/firestore";
+import { collection, query, where, onSnapshot, orderBy, getDoc, doc as firestoreDoc } from "firebase/firestore";
 import { db } from "../firebaseConfig";
 import { getAuth } from "firebase/auth";
 
@@ -23,6 +23,11 @@ interface Conversation {
     lastMessageTime: any;
     unread: boolean;
     lastMessageSender: string;
+}
+
+interface ProviderData {
+    name: string;
+    email?: string;
 }
 
 export default function MessageScreen() {
@@ -53,21 +58,37 @@ export default function MessageScreen() {
             );
 
             const unsubscribe = onSnapshot(conversationsQuery,
-                (snapshot) => {
+                async (snapshot) => {
                     const conversationsData: Conversation[] = [];
 
-                    snapshot.forEach((doc) => {
-                        const data = doc.data();
+                    for (const docSnap of snapshot.docs) {
+                        const data = docSnap.data();
+                        const otherUserId = data.participants.find((id: string) => id !== currentUserId);
+
+                        // Get provider name from providers collection
+                        let providerName = "Provider";
+                        if (otherUserId) {
+                            try {
+                                const providerDoc = await getDoc(firestoreDoc(db, "providers", otherUserId));
+                                if (providerDoc.exists()) {
+                                    const providerData = providerDoc.data() as ProviderData;
+                                    providerName = providerData.name || "Provider";
+                                }
+                            } catch (error) {
+                                console.error("Error fetching provider name:", error);
+                            }
+                        }
+
                         conversationsData.push({
-                            id: doc.id,
+                            id: docSnap.id,
                             participants: data.participants || [],
-                            participantNames: data.participantNames || [],
+                            participantNames: [currentUser?.displayName || "User", providerName],
                             lastMessage: data.lastMessage || "No messages yet",
                             lastMessageTime: data.lastMessageTime,
                             unread: data.unread || false,
                             lastMessageSender: data.lastMessageSender || ""
                         } as Conversation);
-                    });
+                    }
 
                     setConversations(conversationsData);
                     setLoading(false);
@@ -97,10 +118,10 @@ export default function MessageScreen() {
     });
 
     const getOtherUserName = (participants: string[], participantNames: string[]) => {
-        if (!currentUser || !participants) return "Unknown";
+        if (!currentUser || !participants) return "Provider";
 
         const otherParticipantIndex = participants.findIndex(id => id !== currentUser.uid);
-        return participantNames[otherParticipantIndex] || "Unknown";
+        return participantNames[otherParticipantIndex] || "Provider";
     };
 
     const getOtherUserId = (participants: string[]) => {
@@ -121,7 +142,7 @@ export default function MessageScreen() {
     const renderConversationItem = ({ item }: { item: Conversation }) => {
         const otherUserName = getOtherUserName(item.participants, item.participantNames);
         const otherUserId = getOtherUserId(item.participants);
-        const userType = "provider"; // Since this is user messaging providers
+        const userType = "provider";
 
         return (
             <TouchableOpacity
@@ -143,7 +164,7 @@ export default function MessageScreen() {
                 <View style={styles.avatarContainer}>
                     <View style={styles.avatar}>
                         <Text style={styles.avatarText}>
-                            {otherUserName.split(" ").map((n: string) => n[0]).join("")}
+                            {otherUserName.split(" ").map((n: string) => n[0]).join("").toUpperCase()}
                         </Text>
                     </View>
                     {item.unread && <View style={styles.unreadDot} />}
@@ -201,7 +222,7 @@ export default function MessageScreen() {
                             {searchQuery ? "No conversations found" : "No conversations yet"}
                         </Text>
                         <Text style={styles.emptyStateSubText}>
-                            Start a conversation from a provider's profile
+                            Start a conversation from a provider&#39;s profile
                         </Text>
                     </View>
                 }
@@ -231,9 +252,9 @@ export default function MessageScreen() {
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: "#F4EDFF" },
     header: {
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "space-between",
+        flexDirection: "row" as const,
+        alignItems: "center" as const,
+        justifyContent: "space-between" as const,
         paddingHorizontal: 20,
         paddingVertical: 15,
         backgroundColor: "#F4EDFF",
@@ -254,8 +275,8 @@ const styles = StyleSheet.create({
     },
     messagesList: { flex: 1, paddingHorizontal: 15 },
     messageItem: {
-        flexDirection: "row",
-        alignItems: "center",
+        flexDirection: "row" as const,
+        alignItems: "center" as const,
         backgroundColor: "#fff",
         borderRadius: 15,
         padding: 15,
@@ -266,18 +287,18 @@ const styles = StyleSheet.create({
         shadowRadius: 3,
         elevation: 2,
     },
-    avatarContainer: { position: "relative", marginRight: 15 },
+    avatarContainer: { position: "relative" as const, marginRight: 15 },
     avatar: {
         width: 50,
         height: 50,
         borderRadius: 25,
         backgroundColor: "#BFA2E0",
-        justifyContent: "center",
-        alignItems: "center",
+        justifyContent: "center" as const,
+        alignItems: "center" as const,
     },
     avatarText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
     unreadDot: {
-        position: "absolute",
+        position: "absolute" as const,
         top: -2,
         right: -2,
         width: 12,
@@ -292,17 +313,17 @@ const styles = StyleSheet.create({
     messageText: { fontSize: 14, color: "#666" },
     time: { fontSize: 12, color: "#999" },
     bottomNav: {
-        flexDirection: "row",
-        justifyContent: "space-around",
-        alignItems: "center",
+        flexDirection: "row" as const,
+        justifyContent: "space-around" as const,
+        alignItems: "center" as const,
         paddingVertical: 10,
         borderTopWidth: 1,
         borderColor: "#ddd",
         backgroundColor: "#fff",
     },
-    emptyState: { padding: 20, alignItems: "center" },
-    emptyStateText: { color: "#666", fontSize: 16, textAlign: "center" },
-    emptyStateSubText: { color: "#999", fontSize: 14, textAlign: "center", marginTop: 8 },
-    loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
+    emptyState: { padding: 20, alignItems: "center" as const },
+    emptyStateText: { color: "#666", fontSize: 16, textAlign: "center" as const },
+    emptyStateSubText: { color: "#999", fontSize: 14, textAlign: "center" as const, marginTop: 8 },
+    loadingContainer: { flex: 1, justifyContent: "center" as const, alignItems: "center" as const },
     loadingText: { marginTop: 10, color: "#666" },
 });
