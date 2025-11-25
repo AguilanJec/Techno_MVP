@@ -264,8 +264,10 @@ export default function ServiceBookingDetails() {
     } = appointment;
 
     const startLabel =
-        (schedule && schedule.name) ||
-        (date ? `${date}` : (startTime ? `${startTime.hour12}:${String(startTime.minute ?? "00").padStart(2, "0")} ${startTime.ampm ?? ""}` : (hour12 ? `${hour12}:${String(minute ?? "00").padStart(2,"0")} ${appointment.ampm ?? ""}` : "—")));
+        startTime
+            ? `${startTime.hour12}:${String(startTime.minute ?? "00").padStart(2, "0")} ${startTime.ampm ?? ""}`
+            : (hour12 ? `${hour12}:${String(minute ?? "00").padStart(2,"0")} ${appointment.ampm ?? ""}` : "—");
+
 
     let endLabel = "—";
     if (endTime && endTime.hour12 !== undefined) {
@@ -391,13 +393,16 @@ export default function ServiceBookingDetails() {
                         </View>
                     ) : null}
 
-                    <View style={styles.metaRow}>
+                    <View style={styles.metaRowSingle}>
                         <Text style={styles.metaText}>Created: {createdLabel}</Text>
+                    </View>
+                    <View style={styles.metaRowSingle}>
                         <Text style={styles.metaText}>Updated: {updatedLabel}</Text>
                     </View>
-
-                    <View style={styles.metaRow}>
+                    <View style={styles.metaRowSingle}>
                         <Text style={styles.metaText}>Accepted: {acceptedLabel}</Text>
+                    </View>
+                    <View style={styles.metaRowSingle}>
                         <Text style={styles.metaText}>Completed: {completedLabel}</Text>
                     </View>
                 </View>
@@ -430,12 +435,13 @@ export default function ServiceBookingDetails() {
                                 </TouchableOpacity>
                             )}
 
-                            {appointment.status !== "completed" && (
+                            {appointment.status !== "completed" && appointment.status !== "cancelled" && (
                                 <TouchableOpacity style={styles.cancelBtn} onPress={onCancel} disabled={updating}>
                                     {updating ? <ActivityIndicator color="#fff" /> : <Ionicons name="close" size={18} color="#fff" />}
                                     <Text style={styles.cancelText}>Cancel Booking</Text>
                                 </TouchableOpacity>
                             )}
+
                         </>
                     )}
                 </View>
@@ -540,4 +546,5 @@ const styles = StyleSheet.create({
         marginBottom: 8,
     },
     cancelText: { color: "#fff", marginLeft: 8, fontWeight: "700" },
+    metaRowSingle: { marginTop: 8 },
 });

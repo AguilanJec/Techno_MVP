@@ -27,13 +27,7 @@ import {
     Timestamp,
 } from "firebase/firestore";
 
-// ---------- Helpers ----------
 
-// Accepts a value that might be:
-// - string (e.g. "2025-11-22")
-// - Firestore Timestamp
-// - an object containing { hour12, minute, ampm } or { hour, minute, ampm }
-// Returns a human-friendly string.
 function formatTimeField(t: any) {
     try {
         if (t === null || t === undefined) return "—";
@@ -325,6 +319,18 @@ const ServiceBookingsScreen: React.FC = () => {
         );
     }
 
+    function formatServiceType(type: string | undefined) {
+        switch (type) {
+            case "one_time":
+                return "One-Time Service";
+            case "schedule":
+                return "Scheduled Service";
+            case "service":
+            default:
+                return type ? type.charAt(0).toUpperCase() + type.slice(1) : "Service";
+        }
+    }
+
     return (
         <View style={styles.container}>
             {/* Header */}
@@ -363,6 +369,7 @@ const ServiceBookingsScreen: React.FC = () => {
             </View>
 
             {/* Bookings list */}
+            {/* Bookings list */}
             <ScrollView
                 style={styles.scrollContainer}
                 contentContainerStyle={styles.scrollContent}
@@ -381,75 +388,87 @@ const ServiceBookingsScreen: React.FC = () => {
                 ) : (
                     bookingsFilteredByTabAndSearch.map((booking) => (
                         <View key={booking.id} style={styles.bookingCard}>
-                            <View style={styles.bookingHeader}>
-                                <Text style={styles.bookingTitle}>{booking.serviceType}</Text>
-                                <View
-                                    style={[
-                                        styles.statusBadge,
-                                        booking.status === "pending" && styles.statusPending,
-                                        booking.status === "accepted" && styles.statusAccepted,
-                                        booking.status === "rejected" && styles.statusRejected,
-                                        booking.status === "ongoing" && styles.statusOngoing,
-                                        booking.status === "completed" && styles.statusCompleted,
-                                        booking.status === "cancelled" && styles.statusCancelled,
-                                    ]}
-                                >
-                                    <Text style={styles.statusText}>{booking.status.toUpperCase()}</Text>
-                                </View>
-                            </View>
-
-                            <View style={styles.bookingDetails}>
-                                <View style={styles.detailRow}>
-                                    <Text style={styles.detailLabel}>Client:</Text>
-                                    <Text style={styles.detailValue}>{booking.userName}</Text>
-                                </View>
-                                <View style={styles.detailRow}>
-                                    <Text style={styles.detailLabel}>Date:</Text>
-                                    <Text style={styles.detailValue}>{booking.bookingDate}</Text>
-                                </View>
-                                <View style={styles.detailRow}>
-                                    <Text style={styles.detailLabel}>Time:</Text>
-                                    <Text style={styles.detailValue}>{booking.startTime} - {booking.endTime}</Text>
-                                </View>
-                                <View style={styles.detailRow}>
-                                    <Text style={styles.detailLabel}>Amount:</Text>
-                                    <Text style={styles.detailValue}>₱{booking.totalAmount}</Text>
-                                </View>
-                                {booking.notes ? (
-                                    <View style={styles.detailRow}>
-                                        <Text style={styles.detailLabel}>Notes:</Text>
-                                        <Text style={styles.detailValue}>{booking.notes}</Text>
+                            {/* Make the card content clickable */}
+                            <TouchableOpacity
+                                style={{ flex: 1 }} // makes the touchable fill the card except buttons
+                                onPress={() => router.push(`../service/service_booking_details?bookingId=${booking.id}`)}
+                                activeOpacity={0.8}
+                            >
+                                <View style={styles.bookingHeader}>
+                                    <Text style={styles.bookingTitle}>{formatServiceType(booking.serviceType)}</Text>
+                                    <View
+                                        style={[
+                                            styles.statusBadge,
+                                            booking.status === "pending" && styles.statusPending,
+                                            booking.status === "accepted" && styles.statusAccepted,
+                                            booking.status === "rejected" && styles.statusRejected,
+                                            booking.status === "ongoing" && styles.statusOngoing,
+                                            booking.status === "completed" && styles.statusCompleted,
+                                            booking.status === "cancelled" && styles.statusCancelled,
+                                        ]}
+                                    >
+                                        <Text style={styles.statusText}>{booking.status.toUpperCase()}</Text>
                                     </View>
-                                ) : null}
-                                <View style={styles.detailRow}>
-                                    <Text style={styles.detailLabel}>Requested:</Text>
-                                    <Text style={styles.detailValue}>{formatTimestamp(booking.createdAt)}</Text>
                                 </View>
-                            </View>
 
-                            {/* Action Buttons */}
+                                <View style={styles.bookingDetails}>
+                                    <View style={styles.detailRow}>
+                                        <Text style={styles.detailLabel}>Client:</Text>
+                                        <Text style={styles.detailValue}>{booking.userName}</Text>
+                                    </View>
+                                    <View style={styles.detailRow}>
+                                        <Text style={styles.detailLabel}>Date:</Text>
+                                        <Text style={styles.detailValue}>{booking.bookingDate}</Text>
+                                    </View>
+                                    <View style={styles.detailRow}>
+                                        <Text style={styles.detailLabel}>Time:</Text>
+                                        <Text style={styles.detailValue}>{booking.startTime} - {booking.endTime}</Text>
+                                    </View>
+                                    <View style={styles.detailRow}>
+                                        <Text style={styles.detailLabel}>Amount:</Text>
+                                        <Text style={styles.detailValue}>₱{booking.totalAmount}</Text>
+                                    </View>
+                                </View>
+                            </TouchableOpacity>
+
+                            {/* Action Buttons (still fully clickable) */}
                             <View style={styles.actionButtons}>
                                 {booking.status === "pending" && (
                                     <>
-                                        <TouchableOpacity style={[styles.actionButton, styles.acceptButton]} onPress={() => updateBookingStatus(booking.id, "accepted")}>
+                                        <TouchableOpacity
+                                            style={[styles.actionButton, styles.acceptButton]}
+                                            onPress={() => updateBookingStatus(booking.id, "accepted")}
+                                        >
                                             <Text style={styles.actionButtonText}>Accept</Text>
                                         </TouchableOpacity>
-                                        <TouchableOpacity style={[styles.actionButton, styles.rejectButton]} onPress={() => updateBookingStatus(booking.id, "rejected")}>
+                                        <TouchableOpacity
+                                            style={[styles.actionButton, styles.rejectButton]}
+                                            onPress={() => updateBookingStatus(booking.id, "rejected")}
+                                        >
                                             <Text style={styles.actionButtonText}>Reject</Text>
                                         </TouchableOpacity>
                                     </>
                                 )}
                                 {booking.status === "accepted" && (
-                                    <TouchableOpacity style={[styles.actionButton, styles.startButton]} onPress={() => updateBookingStatus(booking.id, "ongoing")}>
+                                    <TouchableOpacity
+                                        style={[styles.actionButton, styles.startButton]}
+                                        onPress={() => updateBookingStatus(booking.id, "ongoing")}
+                                    >
                                         <Text style={styles.actionButtonText}>Start Service</Text>
                                     </TouchableOpacity>
                                 )}
                                 {booking.status === "ongoing" && (
-                                    <TouchableOpacity style={[styles.actionButton, styles.completeButton]} onPress={() => updateBookingStatus(booking.id, "completed")}>
+                                    <TouchableOpacity
+                                        style={[styles.actionButton, styles.completeButton]}
+                                        onPress={() => updateBookingStatus(booking.id, "completed")}
+                                    >
                                         <Text style={styles.actionButtonText}>Complete</Text>
                                     </TouchableOpacity>
                                 )}
-                                <TouchableOpacity style={[styles.actionButton, styles.messageButton]} onPress={() => router.push(`../service_chat?userId=${booking.userId}&userName=${encodeURIComponent(booking.userName)}`)}>
+                                <TouchableOpacity
+                                    style={[styles.actionButton, styles.messageButton]}
+                                    onPress={() => router.push(`../service_chat?userId=${booking.userId}&userName=${encodeURIComponent(booking.userName)}`)}
+                                >
                                     <Text style={styles.actionButtonText}>Message</Text>
                                 </TouchableOpacity>
                             </View>
@@ -457,6 +476,7 @@ const ServiceBookingsScreen: React.FC = () => {
                     ))
                 )}
             </ScrollView>
+
 
             {/* Bottom nav */}
             <View style={styles.bottomNav}>

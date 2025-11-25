@@ -120,7 +120,7 @@ export default function ServiceHome() {
                         querySnap.forEach((docSnap) => {
                             const data = docSnap.data();
                             // Filter out completed appointments (keep upcoming/pending/confirmed)
-                            if (data?.status && data.status.toLowerCase() === "completed") {
+                            if (data?.status && data.status.toLowerCase() === "completed" || data?.status && data.status.toLowerCase() === "cancelled") {
                                 return;
                             }
 
