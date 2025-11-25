@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Image } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { doc, getDoc } from "firebase/firestore";
@@ -14,7 +14,6 @@ export default function AccountScreen() {
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, async (user) => {
             if (user) {
-                // Fetch user data from Firestore
                 try {
                     const userDoc = await getDoc(doc(db, "users", user.uid));
                     if (userDoc.exists()) {
@@ -45,15 +44,24 @@ export default function AccountScreen() {
                 {/* ACCOUNT INFO */}
                 <View style={styles.section}>
                     <View style={styles.profileContainer}>
-                        <Ionicons name="person-circle-outline" size={70} color="#b58dde" />
-                        <View>
+                        {userData?.picture ? (
+                            <Image
+                                source={{ uri: userData.picture }} // directly use Base64
+                                style={{ width: 70, height: 70, borderRadius: 35 }}
+                                resizeMode="cover"
+                            />
+                        ) : (
+                            <Ionicons name="person-circle-outline" size={70} color="#b58dde" />
+                        )}
+                        <View style={{ marginLeft: 12 }}>
                             <Text style={styles.profileName}>
-                                {loading ? "Loading..." : (userData?.name || "Tony Stark")}
+                                {loading ? "Loading..." : (userData?.name || "")}
                             </Text>
-                            <Text style={styles.profileEmail}>
-                                {userData?.email || ""}
-                            </Text>
-                            <TouchableOpacity style={styles.profileButton} onPress={() => router.push("/profile")}>
+                            <Text style={styles.profileEmail}>{userData?.email || ""}</Text>
+                            <TouchableOpacity
+                                style={styles.profileButton}
+                                onPress={() => router.push("/profile")}
+                            >
                                 <Text style={styles.profileButtonText}>View full profile</Text>
                             </TouchableOpacity>
                         </View>
@@ -71,7 +79,7 @@ export default function AccountScreen() {
                         <Text style={styles.itemText}>My messages</Text>
                         <Ionicons name="chevron-forward" size={18} color="#777" />
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.item} >
+                    <TouchableOpacity style={styles.item}>
                         <View style={styles.locationItem}>
                             <Text style={styles.itemText}>My location</Text>
                             {userData?.address && (
@@ -120,7 +128,7 @@ export default function AccountScreen() {
                 </View>
             </ScrollView>
 
-            {/* BOTTOM NAVIGATION BAR */}
+            {/* BOTTOM NAV */}
             <View style={styles.bottomNav}>
                 <TouchableOpacity onPress={() => router.push("/user/home")}>
                     <Ionicons name="home-outline" size={24} color="#8e44ad" />
@@ -141,6 +149,7 @@ export default function AccountScreen() {
         </View>
     );
 }
+
 
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: "#fff" },

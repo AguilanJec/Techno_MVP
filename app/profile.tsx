@@ -66,7 +66,17 @@ const ProfileScreen: React.FC = () => {
             <ScrollView contentContainerStyle={styles.scroll}>
                 {/* PROFILE IMAGE + NAME */}
                 <View style={styles.profileSection}>
-                    <Ionicons name="person-circle" size={120} color="#b58dde" />
+                    {userData?.picture ? (
+                        <Image
+                            source={{
+                                uri: userData.picture.trim(),
+                            }}
+                            style={styles.profileImage}
+                            resizeMode="cover"
+                        />
+                    ) : (
+                        <Ionicons name="person-circle" size={120} color="#b58dde" />
+                    )}
                     <View style={styles.nameRow}>
                         <Text style={styles.profileName}>
                             {loading ? "Loading..." : (userData?.name || "Tony Stark")}
@@ -76,6 +86,7 @@ const ProfileScreen: React.FC = () => {
                         </TouchableOpacity>
                     </View>
                 </View>
+
 
                 {/* PERSONAL INFORMATION */}
                 <View style={styles.section}>
@@ -304,5 +315,10 @@ const styles = StyleSheet.create({
         borderTopWidth: 1,
         borderColor: "#eee",
         backgroundColor: "#fff",
+    },
+    profileImage: {
+        width: 120,
+        height: 120,
+        borderRadius: 60,
     },
 });
