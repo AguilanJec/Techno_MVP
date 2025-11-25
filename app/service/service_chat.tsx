@@ -31,7 +31,7 @@ import {
     getDoc,
     serverTimestamp
 } from "firebase/firestore";
-import { db } from "../firebaseConfig";
+import { db } from "../../firebaseConfig";
 import { getAuth } from "firebase/auth";
 
 interface Message {

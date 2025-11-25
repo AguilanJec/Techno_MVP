@@ -7,25 +7,13 @@ import {
     StyleSheet,
     SafeAreaView,
     FlatList,
-    Modal,
     ActivityIndicator
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { collection, query, where, getDocs, onSnapshot, orderBy, addDoc } from "firebase/firestore";
+import { collection, query, where, onSnapshot, orderBy } from "firebase/firestore";
 import { db } from "../firebaseConfig";
 import { getAuth } from "firebase/auth";
-
-interface Provider {
-    id: string;
-    name: string;
-    bio?: string;
-    distance?: string;
-    rate?: string;
-    rating?: number;
-    type?: string;
-    skills?: string[];
-}
 
 interface Conversation {
     id: string;
@@ -40,12 +28,9 @@ interface Conversation {
 export default function MessageScreen() {
     const router = useRouter();
     const [searchQuery, setSearchQuery] = useState("");
-    const [modalVisible, setModalVisible] = useState(false);
     const [conversations, setConversations] = useState<Conversation[]>([]);
-    const [availableProviders, setAvailableProviders] = useState<Provider[]>([]);
     const [currentUser, setCurrentUser] = useState<any>(null);
     const [loading, setLoading] = useState(true);
-    const [contactsLoading, setContactsLoading] = useState(false);
 
     useEffect(() => {
         const auth = getAuth();
@@ -63,7 +48,8 @@ export default function MessageScreen() {
         try {
             const conversationsQuery = query(
                 collection(db, "conversations"),
-                where("participants", "array-contains", currentUserId)
+                where("participants", "array-contains", currentUserId),
+                orderBy("lastMessageTime", "desc")
             );
 
             const unsubscribe = onSnapshot(conversationsQuery,
@@ -83,17 +69,6 @@ export default function MessageScreen() {
                         } as Conversation);
                     });
 
-                    // Sort conversations locally by lastMessageTime in descending order
-                    conversationsData.sort((a, b) => {
-                        try {
-                            const timeA = a.lastMessageTime?.toDate?.() || new Date(0);
-                            const timeB = b.lastMessageTime?.toDate?.() || new Date(0);
-                            return timeB.getTime() - timeA.getTime();
-                        } catch (error) {
-                            return 0;
-                        }
-                    });
-
                     setConversations(conversationsData);
                     setLoading(false);
                 },
@@ -110,137 +85,6 @@ export default function MessageScreen() {
         }
     };
 
-    const getExistingConversationProviders = () => {
-        if (!currentUser || conversations.length === 0) {
-            return [];
-        }
-
-        const existingProviders: Provider[] = [];
-
-        conversations.forEach(conversation => {
-            const otherParticipantIndex = conversation.participants.findIndex(id => id !== currentUser.uid);
-            if (otherParticipantIndex !== -1) {
-                const providerId = conversation.participants[otherParticipantIndex];
-                const providerName = conversation.participantNames[otherParticipantIndex];
-
-                // Check if we already added this provider
-                const existingProvider = existingProviders.find(p => p.id === providerId);
-
-                if (!existingProvider) {
-                    existingProviders.push({
-                        id: providerId,
-                        name: providerName,
-                        type: "Provider" // Default type since we don't have full provider data
-                    } as Provider);
-                }
-            }
-        });
-
-        return existingProviders;
-    };
-
-    const fetchAvailableProviders = async () => {
-        if (!currentUser) return;
-
-        try {
-            setContactsLoading(true);
-
-            // Get providers from existing conversations only
-            const existingProviders = getExistingConversationProviders();
-
-            // If we want to enrich with more provider data from Firestore, we can do:
-            if (existingProviders.length > 0) {
-                const providerIds = existingProviders.map(p => p.id);
-                const enrichedProviders: Provider[] = [...existingProviders]; // Start with basic data
-
-                try {
-                    // Try to fetch additional provider details in batches
-                    const batchSize = 10;
-                    const batches = [];
-
-                    for (let i = 0; i < providerIds.length; i += batchSize) {
-                        const batch = providerIds.slice(i, i + batchSize);
-                        const providersQuery = query(
-                            collection(db, "providers"),
-                            where("__name__", "in", batch)
-                        );
-                        batches.push(getDocs(providersQuery));
-                    }
-
-                    const allSnapshots = await Promise.all(batches);
-
-                    // Update providers with additional data
-                    allSnapshots.forEach((snapshot) => {
-                        snapshot.forEach((doc) => {
-                            const providerData = doc.data();
-                            const providerIndex = enrichedProviders.findIndex(p => p.id === doc.id);
-
-                            if (providerIndex !== -1) {
-                                enrichedProviders[providerIndex] = {
-                                    ...enrichedProviders[providerIndex],
-                                    bio: providerData.bio,
-                                    distance: providerData.distance,
-                                    rate: providerData.rate,
-                                    rating: providerData.rating,
-                                    type: providerData.type || "Provider",
-                                    skills: providerData.skills
-                                };
-                            }
-                        });
-                    });
-
-                    setAvailableProviders(enrichedProviders);
-                } catch (error) {
-                    console.error("Error fetching provider details, using basic data:", error);
-                    // If Firestore fetch fails, use the basic data we have
-                    setAvailableProviders(existingProviders);
-                }
-            } else {
-                setAvailableProviders([]);
-            }
-
-            setContactsLoading(false);
-        } catch (error) {
-            console.error("Error fetching available providers:", error);
-            // Fallback to basic conversation data
-            setAvailableProviders(getExistingConversationProviders());
-            setContactsLoading(false);
-        }
-    };
-
-    const startConversation = async (providerId: string, providerName: string) => {
-        if (!currentUser) return;
-
-        try {
-            // Check for existing conversation
-            const existingConv = conversations.find(conversation =>
-                conversation.participants.includes(currentUser.uid) &&
-                conversation.participants.includes(providerId)
-            );
-
-            if (existingConv) {
-                router.push(`/chat?conversationId=${existingConv.id}&providerName=${encodeURIComponent(providerName)}&providerId=${providerId}`);
-            } else {
-                const newConversation = {
-                    participants: [currentUser.uid, providerId],
-                    participantNames: [currentUser.displayName || "User", providerName],
-                    lastMessage: "Conversation started",
-                    lastMessageTime: new Date(),
-                    unread: false,
-                    lastMessageSender: currentUser.uid
-                };
-
-                const docRef = await addDoc(collection(db, "conversations"), newConversation);
-                router.push(`/chat?conversationId=${docRef.id}&providerName=${encodeURIComponent(providerName)}&providerId=${providerId}`);
-            }
-
-            setModalVisible(false);
-            setSearchQuery("");
-        } catch (error) {
-            console.error("Error starting conversation:", error);
-        }
-    };
-
     const filteredConversations = conversations.filter(conversation => {
         if (!searchQuery) return true;
 
@@ -252,15 +96,16 @@ export default function MessageScreen() {
             conversation.lastMessage.toLowerCase().includes(searchQuery.toLowerCase());
     });
 
-    const filteredProviders = availableProviders.filter(provider =>
-        provider.name.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-
-    const getProviderName = (participants: string[], participantNames: string[]) => {
-        if (!currentUser || !participants) return "Unknown Provider";
+    const getOtherUserName = (participants: string[], participantNames: string[]) => {
+        if (!currentUser || !participants) return "Unknown";
 
         const otherParticipantIndex = participants.findIndex(id => id !== currentUser.uid);
-        return participantNames[otherParticipantIndex] || "Unknown Provider";
+        return participantNames[otherParticipantIndex] || "Unknown";
+    };
+
+    const getOtherUserId = (participants: string[]) => {
+        if (!currentUser || !participants) return "";
+        return participants.find(id => id !== currentUser?.uid) || "";
     };
 
     const formatTime = (timestamp: any) => {
@@ -274,54 +119,43 @@ export default function MessageScreen() {
     };
 
     const renderConversationItem = ({ item }: { item: Conversation }) => {
-        const providerName = getProviderName(item.participants, item.participantNames);
+        const otherUserName = getOtherUserName(item.participants, item.participantNames);
+        const otherUserId = getOtherUserId(item.participants);
+        const userType = "provider"; // Since this is user messaging providers
 
         return (
             <TouchableOpacity
                 style={styles.messageItem}
                 onPress={() => {
-                    const providerId = item.participants.find(id => id !== currentUser?.uid);
-                    router.push(`/chat?conversationId=${item.id}&providerName=${encodeURIComponent(providerName)}&providerId=${providerId}`);
+                    if (otherUserId) {
+                        router.push({
+                            pathname: "/chat",
+                            params: {
+                                conversationId: item.id,
+                                otherUserName: otherUserName,
+                                otherUserId: otherUserId,
+                                userType: userType
+                            }
+                        });
+                    }
                 }}
             >
                 <View style={styles.avatarContainer}>
                     <View style={styles.avatar}>
                         <Text style={styles.avatarText}>
-                            {providerName.split(" ").map((n: string) => n[0]).join("")}
+                            {otherUserName.split(" ").map((n: string) => n[0]).join("")}
                         </Text>
                     </View>
                     {item.unread && <View style={styles.unreadDot} />}
                 </View>
                 <View style={styles.messageContent}>
-                    <Text style={styles.name}>{providerName}</Text>
+                    <Text style={styles.name}>{otherUserName}</Text>
                     <Text style={styles.messageText}>{item.lastMessage}</Text>
                 </View>
                 <Text style={styles.time}>{formatTime(item.lastMessageTime)}</Text>
             </TouchableOpacity>
         );
     };
-
-    const renderProviderItem = ({ item }: { item: Provider }) => (
-        <TouchableOpacity
-            style={styles.contactItem}
-            onPress={() => startConversation(item.id, item.name)}
-        >
-            <View style={styles.avatar}>
-                <Text style={styles.avatarText}>
-                    {item.name.split(" ").map((n: string) => n[0]).join("")}
-                </Text>
-            </View>
-            <View style={styles.contactInfo}>
-                <Text style={styles.contactName}>{item.name}</Text>
-                <Text style={styles.userType}>{item.type || "Provider"}</Text>
-                {item.skills && item.skills.length > 0 && (
-                    <Text style={styles.skills} numberOfLines={1}>
-                        {item.skills.slice(0, 2).join(", ")}
-                    </Text>
-                )}
-            </View>
-        </TouchableOpacity>
-    );
 
     if (loading) {
         return (
@@ -344,14 +178,10 @@ export default function MessageScreen() {
                 <View style={styles.placeholder} />
             </View>
 
-            <Text style={styles.currentTime}>
-                {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-            </Text>
-
             <View style={styles.searchContainer}>
                 <TextInput
                     style={styles.searchInput}
-                    placeholder="Search messages..."
+                    placeholder="Search conversations..."
                     placeholderTextColor="#999"
                     value={searchQuery}
                     onChangeText={setSearchQuery}
@@ -371,22 +201,11 @@ export default function MessageScreen() {
                             {searchQuery ? "No conversations found" : "No conversations yet"}
                         </Text>
                         <Text style={styles.emptyStateSubText}>
-                            Start a new conversation by tapping "Write a message"
+                            Start a conversation from a provider's profile
                         </Text>
                     </View>
                 }
             />
-
-            <TouchableOpacity
-                style={styles.writeButton}
-                onPress={() => {
-                    setSearchQuery("");
-                    fetchAvailableProviders();
-                    setModalVisible(true);
-                }}
-            >
-                <Text style={styles.writeButtonText}>Write a message</Text>
-            </TouchableOpacity>
 
             <View style={styles.bottomNav}>
                 <TouchableOpacity onPress={() => router.push("/user/home")}>
@@ -405,57 +224,6 @@ export default function MessageScreen() {
                     <Ionicons name="person-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
             </View>
-
-            <Modal
-                animationType="slide"
-                transparent={true}
-                visible={modalVisible}
-                onRequestClose={() => setModalVisible(false)}
-            >
-                <View style={styles.modalContainer}>
-                    <View style={styles.modalContent}>
-                        <View style={styles.modalHeader}>
-                            <Text style={styles.modalTitle}>Existing Conversations</Text>
-                            <TouchableOpacity onPress={() => setModalVisible(false)}>
-                                <Text style={styles.closeButton}>✕</Text>
-                            </TouchableOpacity>
-                        </View>
-
-                        <TextInput
-                            style={styles.modalSearchInput}
-                            placeholder="Search providers..."
-                            placeholderTextColor="#999"
-                            value={searchQuery}
-                            onChangeText={setSearchQuery}
-                            autoFocus={true}
-                        />
-
-                        {contactsLoading ? (
-                            <View style={styles.loadingContainer}>
-                                <ActivityIndicator size="small" color="#8e44ad" />
-                                <Text>Loading providers...</Text>
-                            </View>
-                        ) : (
-                            <FlatList
-                                data={filteredProviders}
-                                renderItem={renderProviderItem}
-                                keyExtractor={(item) => item.id}
-                                style={styles.contactsList}
-                                ListEmptyComponent={
-                                    <View style={styles.emptyState}>
-                                        <Text style={styles.emptyStateText}>
-                                            {searchQuery ? "No providers found" : "No existing conversations"}
-                                        </Text>
-                                        <Text style={styles.emptyStateSubText}>
-                                            You don't have any conversations yet
-                                        </Text>
-                                    </View>
-                                }
-                            />
-                        )}
-                    </View>
-                </View>
-            </Modal>
         </SafeAreaView>
     );
 }
@@ -474,7 +242,6 @@ const styles = StyleSheet.create({
     backButtonText: { fontSize: 20, color: "#4B3C88", fontWeight: "bold" },
     headerTitle: { fontSize: 18, fontWeight: "bold", color: "#4B3C88" },
     placeholder: { width: 30 },
-    currentTime: { textAlign: "center", fontSize: 16, color: "#666", marginVertical: 10 },
     searchContainer: { paddingHorizontal: 20, marginBottom: 10 },
     searchInput: {
         backgroundColor: "#fff",
@@ -524,19 +291,6 @@ const styles = StyleSheet.create({
     name: { fontSize: 16, fontWeight: "bold", color: "#4B3C88", marginBottom: 4 },
     messageText: { fontSize: 14, color: "#666" },
     time: { fontSize: 12, color: "#999" },
-    writeButton: {
-        backgroundColor: "#BFA2E0",
-        margin: 20,
-        paddingVertical: 16,
-        borderRadius: 25,
-        alignItems: "center",
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.2,
-        shadowRadius: 4,
-        elevation: 3,
-    },
-    writeButtonText: { color: "#fff", fontSize: 16, fontWeight: "600" },
     bottomNav: {
         flexDirection: "row",
         justifyContent: "space-around",
@@ -546,42 +300,6 @@ const styles = StyleSheet.create({
         borderColor: "#ddd",
         backgroundColor: "#fff",
     },
-    modalContainer: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
-    modalContent: {
-        backgroundColor: "#fff",
-        borderTopLeftRadius: 20,
-        borderTopRightRadius: 20,
-        padding: 20,
-        maxHeight: "80%",
-    },
-    modalHeader: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
-        marginBottom: 15,
-    },
-    modalTitle: { fontSize: 18, fontWeight: "bold", color: "#4B3C88" },
-    closeButton: { fontSize: 20, color: "#666" },
-    modalSearchInput: {
-        backgroundColor: "#F4EDFF",
-        borderRadius: 20,
-        paddingHorizontal: 15,
-        paddingVertical: 12,
-        fontSize: 16,
-        marginBottom: 15,
-    },
-    contactsList: { maxHeight: 300 },
-    contactItem: {
-        flexDirection: "row",
-        alignItems: "center",
-        paddingVertical: 12,
-        borderBottomWidth: 1,
-        borderBottomColor: "#f0f0f0",
-    },
-    contactInfo: { marginLeft: 15, flex: 1 },
-    contactName: { fontSize: 16, color: "#333", fontWeight: "500" },
-    userType: { fontSize: 14, color: "#666", textTransform: "capitalize", marginTop: 2 },
-    skills: { fontSize: 12, color: "#999", marginTop: 2 },
     emptyState: { padding: 20, alignItems: "center" },
     emptyStateText: { color: "#666", fontSize: 16, textAlign: "center" },
     emptyStateSubText: { color: "#999", fontSize: 14, textAlign: "center", marginTop: 8 },
