@@ -20,11 +20,11 @@ import { getAuth } from "firebase/auth";
 interface UserData {
     id: string;
     name: string;
-    role?: string; // raw role/type from DB
-    displayRole?: string; // normalized (Tutor | Babysitter | other)
+    role?: string;
+    displayRole?: string;
     latitude?: number;
     longitude?: number;
-    distance?: string; // formatted like "0.85 km"
+    distance?: string;
     distanceKm?: number;
     rate?: string;
     rating?: number;
@@ -41,7 +41,6 @@ export default function SearchScreen() {
     const [activeCategory, setActiveCategory] = useState("All");
     const [searchQuery, setSearchQuery] = useState("");
     const [showFilterModal, setShowFilterModal] = useState(false);
-
 
     // See-more modal state
     const [seeMoreVisible, setSeeMoreVisible] = useState(false);
@@ -74,24 +73,30 @@ export default function SearchScreen() {
             Math.sin(dLon / 2) *
             Math.sin(dLon / 2);
         const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        return R * c; // km
+        return R * c;
     };
 
     const formatDistanceKm = (distanceKm: number | undefined) => {
         if (typeof distanceKm !== "number" || isNaN(distanceKm)) return "—";
-        return `${distanceKm.toFixed(2)} km`; // always in km (2 decimals)
+        return `${distanceKm.toFixed(2)} km`;
     };
 
+    // FIXED: Improved parseRate function
     const parseRate = (rate?: string): number => {
         if (!rate) return 0;
-        const n = parseInt(String(rate).replace(/[^0-9]/g, ""), 10);
-        return Number.isNaN(n) ? 0 : n;
+        // Remove all non-numeric characters except decimal point
+        const cleanedRate = rate.replace(/[^\d.]/g, '');
+        const parsed = parseFloat(cleanedRate);
+        return isNaN(parsed) ? 0 : parsed;
     };
 
     const parseDistance = (distance?: string): number => {
-        if (!distance) return Infinity;
-        const n = parseFloat(distance);
-        return Number.isNaN(n) ? Infinity : n;
+        if (!distance || distance === "—") return Infinity;
+        const match = distance.match(/(\d+\.?\d*)/);
+        if (match) {
+            return parseFloat(match[1]);
+        }
+        return Infinity;
     };
 
     // Normalize role/type string to display role
@@ -103,6 +108,23 @@ export default function SearchScreen() {
             return "Babysitter";
         if (s.length === 0) return "";
         return s.charAt(0).toUpperCase() + s.slice(1);
+    };
+
+    // FIXED: Apply sorting to any array based on current sortBy
+    const applySorting = (data: UserData[]) => {
+        let sorted = [...data];
+
+        if (sortBy === "distance") {
+            sorted = sorted.sort((a, b) => parseDistance(a.distance) - parseDistance(b.distance));
+        } else if (sortBy === "price_low") {
+            sorted = sorted.sort((a, b) => parseRate(a.rate) - parseRate(b.rate));
+        } else if (sortBy === "price_high") {
+            sorted = sorted.sort((a, b) => parseRate(b.rate) - parseRate(a.rate));
+        } else if (sortBy === "rating") {
+            sorted = sorted.sort((a, b) => (b.rating || 0) - (a.rating || 0));
+        }
+
+        return sorted;
     };
 
     useEffect(() => {
@@ -191,11 +213,11 @@ export default function SearchScreen() {
         fetchAll();
     }, [loggedInEmail]);
 
-    // Filtering + sorting effect (reads providers -> produces filteredProviders)
+    // Filtering + sorting effect
     useEffect(() => {
         let filtered = providers.slice();
 
-        // Category filter: use displayRole (normalized)
+        // Category filter
         if (activeCategory === "Tutor") {
             filtered = filtered.filter(
                 (item) => (item.displayRole || "").toLowerCase() === "tutor"
@@ -206,7 +228,7 @@ export default function SearchScreen() {
             );
         }
 
-        // Search filter (by name)
+        // Search filter
         if (searchQuery.trim() !== "") {
             const q = searchQuery.toLowerCase();
             filtered = filtered.filter((item) => (item.name || "").toLowerCase().includes(q));
@@ -217,16 +239,8 @@ export default function SearchScreen() {
             filtered = filtered.filter((item) => item.status === employeeStatus);
         }
 
-        // Sorting
-        if (sortBy === "distance") {
-            filtered = filtered.slice().sort((a, b) => parseDistance(a.distance) - parseDistance(b.distance));
-        } else if (sortBy === "price_low") {
-            filtered = filtered.slice().sort((a, b) => parseRate(a.rate) - parseRate(b.rate));
-        } else if (sortBy === "price_high") {
-            filtered = filtered.slice().sort((a, b) => parseRate(b.rate) - parseRate(a.rate));
-        } else if (sortBy === "rating") {
-            filtered = filtered.slice().sort((a, b) => (b.rating || 0) - (a.rating || 0));
-        }
+        // Apply sorting
+        filtered = applySorting(filtered);
 
         setFilteredProviders(filtered);
     }, [providers, activeCategory, searchQuery, sortBy, employeeStatus]);
@@ -239,6 +253,22 @@ export default function SearchScreen() {
         setSortBy("");
         setEmployeeStatus("");
         setShowFilterModal(false);
+    };
+
+    // FIXED: Show current active sort
+    const getActiveFilterText = () => {
+        const filters = [];
+        if (sortBy) {
+            const sortText =
+                sortBy === "distance" ? "Closest" :
+                    sortBy === "price_low" ? "Price: Low to High" :
+                        sortBy === "price_high" ? "Price: High to Low" : "Highest Rating";
+            filters.push(sortText);
+        }
+        if (employeeStatus) {
+            filters.push(employeeStatus === "available" ? "Available" : "Busy");
+        }
+        return filters.length > 0 ? ` • ${filters.join(', ')}` : '';
     };
 
     const getStatusColor = (status?: string) => {
@@ -263,7 +293,7 @@ export default function SearchScreen() {
         }
     };
 
-    // Open see-more modal for a section (title, full list)
+    // Open see-more modal for a section
     const openSeeMore = (title: string, data: UserData[]) => {
         setSeeMoreTitle(title);
         setSeeMoreList(data);
@@ -277,7 +307,6 @@ export default function SearchScreen() {
     };
 
     const renderProvider = ({ item }: { item: UserData }) => {
-        // Strip 'url()' wrapper from the database string if it exists
         const base64String = item.picture
             ? item.picture.replace(/^url\((['"]?)(.*)\1\)$/, '$2')
             : null;
@@ -315,7 +344,6 @@ export default function SearchScreen() {
                                 </View>
                             </View>
 
-                            {/* role pill */}
                             {item.displayRole ? (
                                 <View style={styles.roleRow}>
                                     <View style={styles.rolePill}>
@@ -352,26 +380,32 @@ export default function SearchScreen() {
         );
     };
 
+    // FIXED: These now just filter, sorting is applied in renderHorizontalSection
+    const recommendedProviders = filteredProviders.filter((p) => (p.rating || 0) >= 4.5);
+    const closestProviders = filteredProviders;
 
-    // compute recommended & closest from filteredProviders
-    const recommendedProviders = filteredProviders
-        .filter((p) => (p.rating || 0) >= 4.5)
-        .sort((a, b) => (b.rating || 0) - (a.rating || 0)); // highest rating first
-
-    const closestProviders = filteredProviders
-        .slice()
-        .sort((a, b) => parseDistance(a.distance) - parseDistance(b.distance));
-
-    // when rendering horizontal section, pass sliced (<=5) items for UI and full list to see-more
+    // FIXED: Apply current sorting to horizontal sections
     const renderHorizontalSection = (title: string, data: UserData[]) => {
-        const display = data.slice(0, 5); // show up to 5
+        // Apply current sorting to the data
+        let sortedData = applySorting(data);
+
+        // For "Close to you" section, use distance sorting when no explicit sort is applied
+        if (!sortBy && title === "Close to you") {
+            sortedData = [...data].sort((a, b) => parseDistance(a.distance) - parseDistance(b.distance));
+        }
+        // For "Recommend" section, use rating sorting when no explicit sort is applied
+        else if (!sortBy && title === "Recommend") {
+            sortedData = [...data].sort((a, b) => (b.rating || 0) - (a.rating || 0));
+        }
+
+        const display = sortedData.slice(0, 5);
         if (display.length === 0) return null;
 
         return (
             <View style={styles.section}>
                 <View style={styles.sectionHeader}>
                     <Text style={styles.sectionTitle}>{title}</Text>
-                    <TouchableOpacity onPress={() => openSeeMore(title, data)}>
+                    <TouchableOpacity onPress={() => openSeeMore(title, sortedData)}>
                         <Text style={styles.seeMore}>See more</Text>
                     </TouchableOpacity>
                 </View>
@@ -387,9 +421,6 @@ export default function SearchScreen() {
             </View>
         );
     };
-
-    // show vertical list only if All category OR user typed a search query
-    const shouldShowVertical = searchQuery.trim() !== "" || activeCategory === "All";
 
     return (
         <SafeAreaView style={styles.container}>
@@ -410,6 +441,15 @@ export default function SearchScreen() {
                         <Ionicons name="filter" size={24} color="#fff" />
                     </TouchableOpacity>
                 </View>
+
+                {/* FIXED: Show active filters */}
+                {(sortBy || employeeStatus) && (
+                    <View style={styles.activeFiltersContainer}>
+                        <Text style={styles.activeFiltersText}>
+                            Active filters:{getActiveFilterText()}
+                        </Text>
+                    </View>
+                )}
             </View>
 
             {/* Categories */}
@@ -429,12 +469,17 @@ export default function SearchScreen() {
 
             {/* Content */}
             <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-                {/* Recommended and Close-to-you sections are always shown (but use filteredProviders,
-            so when category = Tutor they automatically only show tutors) */}
+                {/* FIXED: Show results count */}
+                <View style={styles.resultsInfo}>
+                    <Text style={styles.resultsText}>
+                        {filteredProviders.length} {filteredProviders.length === 1 ? 'result' : 'results'} found
+                        {getActiveFilterText()}
+                    </Text>
+                </View>
+
+                {/* These sections will now respect the sorting */}
                 {renderHorizontalSection("Recommend", recommendedProviders)}
                 {renderHorizontalSection("Close to you", closestProviders)}
-
-
             </ScrollView>
 
             {/* See more modal (bottom sheet style) */}
@@ -459,7 +504,7 @@ export default function SearchScreen() {
                 </View>
             </Modal>
 
-            {/* Filter Modal (unchanged behavior) */}
+            {/* Filter Modal */}
             <Modal visible={showFilterModal} animationType="slide" transparent={true} onRequestClose={() => setShowFilterModal(false)}>
                 <View style={styles.modalContainer}>
                     <View style={styles.modalContent}>
@@ -528,7 +573,7 @@ export default function SearchScreen() {
                 </View>
             </Modal>
 
-            {/* Bottom Nav (unchanged) */}
+            {/* Bottom Nav */}
             <View style={styles.bottomNav}>
                 <TouchableOpacity onPress={() => router.push("/user/home")}>
                     <Ionicons name="home-outline" size={24} color="#8e44ad" />
@@ -558,7 +603,7 @@ const styles = StyleSheet.create({
     searchContainer: {
         paddingHorizontal: 20,
         paddingTop: 30,
-        paddingBottom: 30,
+        paddingBottom: 15,
         backgroundColor: "#b58dde",
     },
     searchRow: {
@@ -596,6 +641,14 @@ const styles = StyleSheet.create({
         shadowRadius: 3,
         elevation: 3,
     },
+    activeFiltersContainer: {
+        marginTop: 8,
+    },
+    activeFiltersText: {
+        color: "#fff",
+        fontSize: 12,
+        fontStyle: "italic",
+    },
     categoriesContainer: {
         flexDirection: "row",
         paddingHorizontal: 20,
@@ -628,6 +681,15 @@ const styles = StyleSheet.create({
         paddingHorizontal: 20,
         backgroundColor: "#fff",
     },
+    resultsInfo: {
+        paddingHorizontal: 5,
+        paddingVertical: 10,
+    },
+    resultsText: {
+        fontSize: 14,
+        color: "#666",
+        fontWeight: "500",
+    },
     section: {
         marginBottom: 25,
         marginTop: 10,
@@ -651,7 +713,6 @@ const styles = StyleSheet.create({
     horizontalList: {
         paddingRight: 20,
     },
-    verticalList: {},
     card: {
         backgroundColor: "#fff",
         borderRadius: 12,
@@ -846,8 +907,6 @@ const styles = StyleSheet.create({
         borderColor: "#eee",
         backgroundColor: "#fff",
     },
-
-    /* See-more modal */
     seeMoreModalOverlay: {
         flex: 1,
         backgroundColor: "rgba(0,0,0,0.4)",
