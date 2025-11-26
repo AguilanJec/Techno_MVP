@@ -1,4 +1,3 @@
-// app/appointment.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import {
     View,
@@ -25,6 +24,7 @@ type Provider = {
     rating?: number;
     reviews?: number;
     distance?: string;
+    availability?: any; // raw availability map from provider doc
 };
 
 const WEEKDAYS = [
@@ -53,6 +53,59 @@ function toDecimalHour(hour12: number, minute: string, ampm: "AM" | "PM") {
     let hour24 = hour12 % 12;
     if (ampm === "PM") hour24 += 12;
     return hour24 + parseInt(minute, 10) / 60;
+}
+
+/** parse provider time string (HH:mm) -> decimal 24-hr hour e.g. "08:00" -> 8, "20:30" -> 20.5 */
+function parseTimeString(t: string) {
+    if (!t || typeof t !== 'string') return NaN;
+    const [h, m] = t.split(":");
+    const hh = parseInt(h, 10);
+    const mm = parseInt(m || "0", 10);
+    if (Number.isNaN(hh) || Number.isNaN(mm)) return NaN;
+    return hh + mm / 60;
+}
+
+const DAY_FULL = {
+    mon: 'Monday',
+    tue: 'Tuesday',
+    wed: 'Wednesday',
+    thu: 'Thursday',
+    fri: 'Friday',
+    sat: 'Saturday',
+    sun: 'Sunday',
+};
+
+/**
+ * Find the provider availability entry for a day. Provider doc might use full day names ("Monday") or short keys.
+ * Returns undefined when no entry found.
+ */
+function getAvailabilityForDay(availability: any, dayKey: string) {
+    if (!availability) return undefined;
+    // try full name
+    const full = DAY_FULL[dayKey as keyof typeof DAY_FULL];
+    if (full && availability[full]) return availability[full];
+    // try upper-case first (e.g. Monday)
+    if (availability[dayKey]) return availability[dayKey];
+    // try lowercase full
+    if (full && availability[full.toLowerCase()]) return availability[full.toLowerCase()];
+    // try short key (mon,tue..)
+    if (availability[dayKey.toLowerCase()]) return availability[dayKey.toLowerCase()];
+    return undefined;
+}
+
+/** return true if selected [startDec, endDec] fits completely inside provider window [from,to] */
+function isRangeWithinProviderWindow(providerWindow: any, startDec: number, endDec: number) {
+    if (!providerWindow || providerWindow.enabled !== true) return false;
+    const fromDec = parseTimeString(providerWindow.from);
+    const toDec = parseTimeString(providerWindow.to);
+    if (Number.isNaN(fromDec) || Number.isNaN(toDec)) return false;
+    // Normal case: from <= to on same day
+    if (fromDec <= toDec) {
+        return startDec >= fromDec && endDec <= toDec;
+    }
+    // If provider window wraps midnight (rare), accept when start..end is inside that wrapped window
+    // e.g. from 22 -> to 02, start 23 end 1 => start >=22 || end <=2
+    return (startDec >= fromDec && startDec < 24) || (endDec <= toDec && endDec >= 0);
 }
 
 export default function AppointmentScreen() {
@@ -109,6 +162,7 @@ export default function AppointmentScreen() {
                         rating: typeof d.rating === "number" ? d.rating : undefined,
                         reviews: Array.isArray(d.reviews) ? d.reviews.length : typeof d.reviews === "number" ? d.reviews : undefined,
                         distance: d.distance || undefined,
+                        availability: d.availability ?? d.availabilityMap ?? undefined,
                     });
                 } else {
                     setProvider(null);
@@ -341,6 +395,51 @@ export default function AppointmentScreen() {
             Alert.alert("Invalid time", "End time must be after start time.");
             return;
         }
+
+        // ---------- AVAILABILITY VALIDATION ----------
+        // Only enforce availability checks if provider.availability exists
+        const availability = (provider as any).availability;
+        const startDec = toDecimalHour(startHour, startMinute, startAmpm);
+        const endDec = toDecimalHour(endHour, endMinute, endAmpm);
+
+        if (availability) {
+            if (type === 'one_time' && selectedDate) {
+                const d = new Date(selectedDate);
+                const dayIdx = d.getDay(); // 0 Sun .. 6 Sat
+                const dayKey = ['sun','mon','tue','wed','thu','fri','sat'][dayIdx];
+                const dayLabel = DAY_FULL[dayKey as keyof typeof DAY_FULL] || dayKey;
+                const window = getAvailabilityForDay(availability, dayKey);
+                if (!window || window.enabled !== true) {
+                    Alert.alert('Unavailable', `Provider is not available on ${dayLabel}. Please choose another date.`);
+                    return;
+                }
+                if (!isRangeWithinProviderWindow(window, startDec, endDec)) {
+                    const from = window.from || '—';
+                    const to = window.to || '—';
+                    Alert.alert('Unavailable', `Provider is available on ${dayLabel} between ${from} and ${to}. Please pick a time that fits within that window.`);
+                    return;
+                }
+            }
+
+            if (type === 'schedule') {
+                // For each selected weekday ensure availability and window match
+                for (const k of selectedDays) {
+                    const window = getAvailabilityForDay(availability, k);
+                    const dayLabel = DAY_FULL[k as keyof typeof DAY_FULL] || k;
+                    if (!window || window.enabled !== true) {
+                        Alert.alert('Unavailable', `Provider is not available on ${dayLabel}. Remove it from your schedule or pick different days.`);
+                        return;
+                    }
+                    if (!isRangeWithinProviderWindow(window, startDec, endDec)) {
+                        const from = window.from || '—';
+                        const to = window.to || '—';
+                        Alert.alert('Unavailable', `On ${dayLabel} the provider is available between ${from} and ${to}. Please adjust the time or days.`);
+                        return;
+                    }
+                }
+            }
+        }
+        // ---------- END AVAILABILITY VALIDATION ----------
 
         setSubmitting(true);
         try {
