@@ -50,7 +50,8 @@
       "router": {},
       "eas": {
         "projectId": "ba24d82a-ae84-4ec2-ae24-2426cc4f1db3"
-      }
+      },
+      "geminiApiKey": "${GEMINI_API_KEY}"
     }
   }
 }
