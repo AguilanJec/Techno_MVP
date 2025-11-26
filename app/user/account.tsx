@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Image } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Image, Alert } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "../../firebaseConfig";
-import { onAuthStateChanged } from "firebase/auth";
+import { onAuthStateChanged, signOut } from "firebase/auth";
 
 export default function AccountScreen() {
     const router = useRouter();
@@ -29,6 +29,32 @@ export default function AccountScreen() {
         return () => unsubscribe();
     }, []);
 
+    const handleLogout = async () => {
+        Alert.alert(
+            "Logout",
+            "Are you sure you want to logout?",
+            [
+                {
+                    text: "Cancel",
+                    style: "cancel"
+                },
+                {
+                    text: "Logout",
+                    style: "destructive",
+                    onPress: async () => {
+                        try {
+                            await signOut(auth);
+                            router.push("/login");
+                        } catch (error) {
+                            console.error("Error signing out:", error);
+                            Alert.alert("Error", "Failed to logout. Please try again.");
+                        }
+                    }
+                }
+            ]
+        );
+    };
+
     return (
         <View style={styles.container}>
             {/* HEADER */}
@@ -46,7 +72,7 @@ export default function AccountScreen() {
                     <View style={styles.profileContainer}>
                         {userData?.picture ? (
                             <Image
-                                source={{ uri: userData.picture }} // directly use Base64
+                                source={{ uri: userData.picture }}
                                 style={{ width: 70, height: 70, borderRadius: 35 }}
                                 resizeMode="cover"
                             />
@@ -126,6 +152,21 @@ export default function AccountScreen() {
                         <Ionicons name="chevron-forward" size={18} color="#777" />
                     </TouchableOpacity>
                 </View>
+
+                {/* LOGOUT SECTION - ADDED THIS */}
+                <View style={styles.section}>
+                    <Text style={styles.sectionTitle}>Logout</Text>
+                    <TouchableOpacity
+                        style={[styles.item, styles.logoutItem]}
+                        onPress={handleLogout}
+                    >
+                        <View style={styles.logoutContent}>
+                            <Ionicons name="log-out-outline" size={20} color="#e74c3c" />
+                            <Text style={styles.logoutText}>Logout</Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={18} color="#777" />
+                    </TouchableOpacity>
+                </View>
             </ScrollView>
 
             {/* BOTTOM NAV */}
@@ -149,7 +190,6 @@ export default function AccountScreen() {
         </View>
     );
 }
-
 
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: "#fff" },
@@ -216,5 +256,19 @@ const styles = StyleSheet.create({
         borderTopWidth: 1,
         borderColor: "#eee",
         backgroundColor: "#fff",
+    },
+    // NEW STYLES FOR LOGOUT
+    logoutItem: {
+        borderBottomWidth: 0, // Remove border for logout item
+    },
+    logoutContent: {
+        flexDirection: "row",
+        alignItems: "center",
+    },
+    logoutText: {
+        color: "#e74c3c",
+        fontSize: 15,
+        fontWeight: "600",
+        marginLeft: 8,
     },
 });

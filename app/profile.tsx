@@ -5,7 +5,7 @@ import {
     TouchableOpacity,
     StyleSheet,
     ScrollView,
-    Image,
+    Image, Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -38,12 +38,29 @@ const ProfileScreen: React.FC = () => {
     }, []);
 
     const handleLogout = async () => {
-        try {
-            await signOut(auth);
-            router.push("/login");
-        } catch (error) {
-            console.error("Error signing out:", error);
-        }
+        Alert.alert(
+            "Logout",
+            "Are you sure you want to logout?",
+            [
+                {
+                    text: "Cancel",
+                    style: "cancel"
+                },
+                {
+                    text: "Logout",
+                    style: "destructive",
+                    onPress: async () => {
+                        try {
+                            await signOut(auth);
+                            router.push("/login");
+                        } catch (error) {
+                            console.error("Error signing out:", error);
+                            Alert.alert("Error", "Failed to logout. Please try again.");
+                        }
+                    }
+                }
+            ]
+        );
     };
 
     const formatPhoneNumber = (phone: string) => {
