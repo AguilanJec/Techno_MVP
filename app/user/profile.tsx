@@ -10,7 +10,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { doc, getDoc } from "firebase/firestore";
-import { auth, db } from "../firebaseConfig";
+import { auth, db } from "../../firebaseConfig";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 
 const ProfileScreen: React.FC = () => {
@@ -143,7 +143,7 @@ const ProfileScreen: React.FC = () => {
 
                     <View style={styles.linkRow}>
                         <Image
-                            source={require("../assets/Google_Logo.png")}
+                            source={require("../../assets/Google_Logo.png")}
                             style={styles.icon}
                         />
                         <View style={styles.linkContent}>

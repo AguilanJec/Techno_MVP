@@ -11,6 +11,7 @@ import {
     Image,
     Platform,
     ActivityIndicator,
+    Dimensions,
 } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { createUserWithEmailAndPassword, fetchSignInMethodsForEmail } from "firebase/auth";
@@ -18,6 +19,7 @@ import { doc, setDoc } from "firebase/firestore";
 import { auth, db } from "../../firebaseConfig";
 import * as Location from "expo-location";
 import * as ImagePicker from "expo-image-picker";
+import * as ImageManipulator from 'expo-image-manipulator';
 
 export default function EditAddress() {
     const router = useRouter();
@@ -129,7 +131,34 @@ export default function EditAddress() {
         })();
     }, []);
 
-    // Pick profile photo and set base64
+    // Function to resize image to 256x256
+    const resizeImage = async (uri: string): Promise<string> => {
+        try {
+            const manipResult = await ImageManipulator.manipulateAsync(
+                uri,
+                [
+                    {
+                        resize: {
+                            width: 256,
+                            height: 256,
+                        },
+                    },
+                ],
+                {
+                    compress: 0.8,
+                    format: ImageManipulator.SaveFormat.JPEG,
+                    base64: true,
+                }
+            );
+
+            return `data:image/jpeg;base64,${manipResult.base64}`;
+        } catch (error) {
+            console.error("Error resizing image:", error);
+            throw new Error("Failed to resize image");
+        }
+    };
+
+    // Pick profile photo and resize to 256x256
     const pickProfilePhoto = async () => {
         try {
             const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -140,19 +169,34 @@ export default function EditAddress() {
 
             const result = await ImagePicker.launchImageLibraryAsync({
                 mediaTypes: ImagePicker.MediaTypeOptions.Images,
-                base64: true,
+                base64: false, // We'll get base64 after resizing
                 allowsEditing: true,
                 quality: 0.8,
+                aspect: [1, 1], // Force square aspect ratio for profile pictures
             });
 
-            if (!result.canceled) {
-                const base64Img = `data:image/jpeg;base64,${result.assets[0].base64}`;
-                setProfilePhoto(base64Img);
-                setProfilePhotoError("");
+            if (!result.canceled && result.assets[0]) {
+                const selectedImage = result.assets[0];
+
+                // Show loading indicator while resizing
+                setLoading(true);
+
+                try {
+                    // Resize the image to 256x256
+                    const resizedBase64 = await resizeImage(selectedImage.uri);
+                    setProfilePhoto(resizedBase64);
+                    setProfilePhotoError("");
+                } catch (error) {
+                    console.error("Image processing error:", error);
+                    Alert.alert("Image Error", "Could not process image. Please try again.");
+                } finally {
+                    setLoading(false);
+                }
             }
         } catch (err) {
             console.log("Image picker error:", err);
             Alert.alert("Image Error", "Could not pick image. Try again.");
+            setLoading(false);
         }
     };
 
@@ -367,8 +411,17 @@ export default function EditAddress() {
 
             <Text style={styles.label}>Profile Picture *</Text>
 
-            <TouchableOpacity style={[styles.photoPicker, profilePhotoError ? styles.inputError : null]} onPress={pickProfilePhoto}>
-                {profilePhoto ? (
+            <TouchableOpacity
+                style={[styles.photoPicker, profilePhotoError ? styles.inputError : null]}
+                onPress={pickProfilePhoto}
+                disabled={loading}
+            >
+                {loading ? (
+                    <View style={styles.photoLoading}>
+                        <ActivityIndicator size="small" color="#6A4BBC" />
+                        <Text style={styles.photoLoadingText}>Processing image...</Text>
+                    </View>
+                ) : profilePhoto ? (
                     <Image source={{ uri: profilePhoto }} style={styles.profileImage} />
                 ) : (
                     <Text style={styles.photoPlaceholder}>Tap to upload photo</Text>
@@ -448,12 +501,19 @@ const styles = StyleSheet.create({
         marginTop: 10,
         overflow: "hidden",
     },
-
     photoPlaceholder: {
         color: "#666",
         fontSize: 15,
     },
-
+    photoLoading: {
+        justifyContent: "center",
+        alignItems: "center",
+    },
+    photoLoadingText: {
+        marginTop: 8,
+        color: "#666",
+        fontSize: 12,
+    },
     profileImage: {
         width: "100%",
         height: "100%",

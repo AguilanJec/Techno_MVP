@@ -86,7 +86,7 @@ export default function AccountScreen() {
                             <Text style={styles.profileEmail}>{userData?.email || ""}</Text>
                             <TouchableOpacity
                                 style={styles.profileButton}
-                                onPress={() => router.push("/profile")}
+                                onPress={() => router.push("/user/profile")}
                             >
                                 <Text style={styles.profileButtonText}>View full profile</Text>
                             </TouchableOpacity>

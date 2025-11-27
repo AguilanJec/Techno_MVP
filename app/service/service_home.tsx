@@ -10,6 +10,7 @@ import {
     Dimensions,
     ActivityIndicator,
     Image,
+    Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -24,6 +25,8 @@ import {
     query,
     where,
     DocumentData,
+    addDoc,
+    getDocs,
 } from "firebase/firestore";
 import { onAuthStateChanged, User } from "firebase/auth";
 
@@ -106,6 +109,77 @@ export default function ServiceHome() {
         }
     };
 
+    // Function to handle message button press (same as in ServiceBookingsScreen)
+    const handleMessagePress = async (booking: Booking) => {
+        if (!booking.userId || !user?.uid) {
+            Alert.alert("Error", "Cannot message this user - missing user information");
+            return;
+        }
+
+        const cached = booking.userId ? userCache[booking.userId] : undefined;
+        const displayName = cached?.name || booking.parentName || "Parent";
+
+        try {
+            // Check if conversation already exists
+            const conversationsQuery = query(
+                collection(db, "conversations"),
+                where("participants", "array-contains", user.uid)
+            );
+
+            const conversationsSnapshot = await getDocs(conversationsQuery);
+            let existingConversationId = null;
+
+            conversationsSnapshot.forEach((doc) => {
+                const data = doc.data();
+                if (data.participants.includes(booking.userId)) {
+                    existingConversationId = doc.id;
+                }
+            });
+
+            if (existingConversationId) {
+                // Navigate to existing conversation
+                router.push({
+                    pathname: "/user/chat",
+                    params: {
+                        conversationId: existingConversationId,
+                        otherUserName: displayName,
+                        otherUserId: booking.userId,
+                        userType: "customer"
+                    }
+                });
+            } else {
+                // Create new conversation
+                const newConversation = {
+                    participants: [user.uid, booking.userId],
+                    participantNames: {
+                        [user.uid]: providerName || "Provider",
+                        [booking.userId]: displayName
+                    },
+                    lastMessage: "Conversation started",
+                    lastMessageTime: new Date(),
+                    unread: false,
+                    lastMessageSender: user.uid,
+                    createdAt: new Date()
+                };
+
+                const docRef = await addDoc(collection(db, "conversations"), newConversation);
+
+                router.push({
+                    pathname: "/user/chat",
+                    params: {
+                        conversationId: docRef.id,
+                        otherUserName: displayName,
+                        otherUserId: booking.userId,
+                        userType: "customer"
+                    }
+                });
+            }
+        } catch (error) {
+            console.error("Error handling message:", error);
+            Alert.alert("Error", "Failed to start conversation. Please try again.");
+        }
+    };
+
     useEffect(() => {
         if (!user) {
             setProviderName(null);
@@ -124,6 +198,7 @@ export default function ServiceHome() {
             setLoading(true);
             try {
                 // Load provider document
+                // @ts-ignore
                 const providerRef = doc(db, "providers", user.uid);
                 const providerSnap = await getDoc(providerRef);
 
@@ -159,6 +234,7 @@ export default function ServiceHome() {
 
                 // Listen to appointments
                 const appointmentsCol = collection(db, "appointments");
+                // @ts-ignore
                 const q = query(appointmentsCol, where("providerId", "==", user.uid));
                 unsubAppointments = onSnapshot(
                     q,
@@ -300,23 +376,6 @@ export default function ServiceHome() {
         const displayName = cached?.name || item.parentName || "Parent";
         const pictureUri = getSanitizedPictureUri(cached?.picture);
 
-        // FIXED: Properly pass parameters to chat screen
-        const handleMessagePress = () => {
-            if (!item.userId) {
-                console.log("No userId available for this booking");
-                return;
-            }
-
-            router.push({
-                pathname: "/user/chat",
-                params: {
-                    otherUserId: item.userId,
-                    otherUserName: displayName,
-                    userType: "user" // Since provider is messaging a user
-                }
-            });
-        };
-
         return (
             <TouchableOpacity
                 style={styles.bookingCard}
@@ -346,8 +405,11 @@ export default function ServiceHome() {
                     </View>
                 </View>
                 <View style={styles.bookingFooter}>
-                    {/* FIXED: Use the corrected handleMessagePress */}
-                    <TouchableOpacity style={styles.actionButton} onPress={handleMessagePress}>
+                    {/* Use the proper handleMessagePress function */}
+                    <TouchableOpacity
+                        style={styles.actionButton}
+                        onPress={() => handleMessagePress(item)}
+                    >
                         <Ionicons name="chatbubble-outline" size={18} color="#8e44ad" />
                         <Text style={styles.actionButtonText}>Message</Text>
                     </TouchableOpacity>

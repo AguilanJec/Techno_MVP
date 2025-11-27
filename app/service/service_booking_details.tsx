@@ -19,6 +19,11 @@ import {
     updateDoc,
     serverTimestamp,
     DocumentData,
+    addDoc,
+    collection,
+    getDocs,
+    query,
+    where,
 } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 
@@ -76,6 +81,7 @@ export default function ServiceBookingDetails() {
     const [parentData, setParentData] = useState<DocumentData | null>(null);
     const [providerData, setProviderData] = useState<DocumentData | null>(null);
     const [updating, setUpdating] = useState(false);
+    const [providerName, setProviderName] = useState<string>("Provider");
 
     useEffect(() => {
         if (!id) return;
@@ -96,6 +102,20 @@ export default function ServiceBookingDetails() {
                 if (cancelled) return;
                 setAppointment(data);
 
+                // Load provider name for conversation
+                if (data?.providerId) {
+                    try {
+                        const pSnap = await getDoc(doc(db, "providers", data.providerId));
+                        if (pSnap.exists()) {
+                            const providerData = pSnap.data();
+                            setProviderData(providerData);
+                            setProviderName(providerData?.name || "Provider");
+                        }
+                    } catch (err) {
+                        console.warn("Failed to load provider:", err);
+                    }
+                }
+
                 // parent user doc if present
                 if (data?.userId) {
                     try {
@@ -103,16 +123,6 @@ export default function ServiceBookingDetails() {
                         if (uSnap.exists()) setParentData(uSnap.data());
                     } catch (err) {
                         console.warn("Failed to load parent user:", err);
-                    }
-                }
-
-                // provider doc if present
-                if (data?.providerId) {
-                    try {
-                        const pSnap = await getDoc(doc(db, "providers", data.providerId));
-                        if (pSnap.exists()) setProviderData(pSnap.data());
-                    } catch (err) {
-                        console.warn("Failed to load provider:", err);
                     }
                 }
             } catch (err) {
@@ -129,6 +139,78 @@ export default function ServiceBookingDetails() {
             cancelled = true;
         };
     }, [id]);
+
+    // Function to handle message button press (same as in ServiceHome)
+    const handleMessagePress = async () => {
+        const currentUserUid = auth.currentUser?.uid;
+        const parentUserId = appointment?.userId;
+        const parentDisplayName = parentData?.name || appointment?.userEmail || "Parent";
+
+        if (!parentUserId || !currentUserUid) {
+            Alert.alert("Error", "Cannot message this user - missing user information");
+            return;
+        }
+
+        try {
+            // Check if conversation already exists
+            const conversationsQuery = query(
+                collection(db, "conversations"),
+                where("participants", "array-contains", currentUserUid)
+            );
+
+            const conversationsSnapshot = await getDocs(conversationsQuery);
+            let existingConversationId = null;
+
+            conversationsSnapshot.forEach((doc) => {
+                const data = doc.data();
+                if (data.participants.includes(parentUserId)) {
+                    existingConversationId = doc.id;
+                }
+            });
+
+            if (existingConversationId) {
+                // Navigate to existing conversation
+                router.push({
+                    pathname: "/user/chat",
+                    params: {
+                        conversationId: existingConversationId,
+                        otherUserName: parentDisplayName,
+                        otherUserId: parentUserId,
+                        userType: "customer"
+                    }
+                });
+            } else {
+                // Create new conversation
+                const newConversation = {
+                    participants: [currentUserUid, parentUserId],
+                    participantNames: {
+                        [currentUserUid]: providerName,
+                        [parentUserId]: parentDisplayName
+                    },
+                    lastMessage: "Conversation started from booking",
+                    lastMessageTime: new Date(),
+                    unread: false,
+                    lastMessageSender: currentUserUid,
+                    createdAt: new Date()
+                };
+
+                const docRef = await addDoc(collection(db, "conversations"), newConversation);
+
+                router.push({
+                    pathname: "/user/chat",
+                    params: {
+                        conversationId: docRef.id,
+                        otherUserName: parentDisplayName,
+                        otherUserId: parentUserId,
+                        userType: "customer"
+                    }
+                });
+            }
+        } catch (error) {
+            console.error("Error handling message:", error);
+            Alert.alert("Error", "Failed to start conversation. Please try again.");
+        }
+    };
 
     if (!id) {
         return (
@@ -216,15 +298,6 @@ export default function ServiceBookingDetails() {
         }
     };
 
-    const onMessageParent = () => {
-        const uid = appointment?.userId;
-        if (!uid) {
-            Alert.alert("No chat target", "Parent user id not available to message.");
-            return;
-        }
-        router.push(`/user/chat?uid=${uid}`);
-    };
-
     if (loading) {
         return (
             <View style={[styles.container, styles.centered]}>
@@ -251,7 +324,7 @@ export default function ServiceBookingDetails() {
         minute,
         notes,
         providerId,
-        providerName,
+        providerName: appointmentProviderName,
         ratePerHour,
         schedule,
         startTime,
@@ -311,7 +384,7 @@ export default function ServiceBookingDetails() {
                 <View style={styles.card}>
                     <View style={styles.rowTop}>
                         <View>
-                            <Text style={styles.title}>{providerName ?? providerData?.name ?? "Provider"}</Text>
+                            <Text style={styles.title}>{appointmentProviderName ?? providerData?.name ?? "Provider"}</Text>
                             <Text style={styles.subtle}>{appointmentType ? appointmentType.replace("_", " ") : "service"}</Text>
                         </View>
 
@@ -409,7 +482,8 @@ export default function ServiceBookingDetails() {
 
                 {/* Actions */}
                 <View style={styles.actionsBlock}>
-                    <TouchableOpacity style={styles.contactBtn} onPress={onMessageParent}>
+                    {/* Updated Message Button */}
+                    <TouchableOpacity style={styles.contactBtn} onPress={handleMessagePress}>
                         <Ionicons name="chatbubble-outline" size={18} color="#fff" />
                         <Text style={styles.contactText}>Message Parent</Text>
                     </TouchableOpacity>

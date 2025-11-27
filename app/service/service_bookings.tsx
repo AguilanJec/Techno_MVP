@@ -436,8 +436,13 @@ const ServiceBookingsScreen: React.FC = () => {
                 />
             </View>
 
-            {/* Tabs */}
-            <View style={styles.tabs}>
+            {/* Tabs - Made horizontal scrollable */}
+            <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={styles.tabsContainer}
+                contentContainerStyle={styles.tabsContent}
+            >
                 {(["All", "Pending", "Ongoing", "Completed", "Cancelled"] as const).map((tab) => (
                     <TouchableOpacity
                         key={tab}
@@ -449,7 +454,7 @@ const ServiceBookingsScreen: React.FC = () => {
                         </Text>
                     </TouchableOpacity>
                 ))}
-            </View>
+            </ScrollView>
 
             {/* Bookings list */}
             <ScrollView
@@ -631,16 +636,20 @@ const styles = StyleSheet.create({
         height: 40,
         fontSize: 16,
     },
-    tabs: {
-        flexDirection: "row" as const,
-        justifyContent: "space-around" as const,
+    // Updated tabs container for horizontal scrolling
+    tabsContainer: {
         backgroundColor: "#f8f8f8",
+        maxHeight: 50,
+    },
+    tabsContent: {
         paddingVertical: 10,
+        paddingHorizontal: 8,
     },
     tab: {
         paddingHorizontal: 20,
         paddingVertical: 6,
         borderRadius: 20,
+        marginHorizontal: 4,
     },
     tabActive: {
         backgroundColor: "#b58dde",
