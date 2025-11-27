@@ -14,7 +14,7 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-// Safe env loading (EXPO_PUBLIC_ prefix for client-side)
+
 const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || "";
 
 if (!GEMINI_API_KEY) {
@@ -23,7 +23,7 @@ if (!GEMINI_API_KEY) {
 
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({
-    model: "gemini-2.0-flash", // ← THIS FIXES THE 404 ERROR (latest stable model)
+    model: "gemini-2.0-flash",
     systemInstruction:
         "You are M.A.V.I — a warm, caring Filipino virtual assistant for Hiraya. Reply in natural Taglish with emojis and line breaks. Be kind and helpful.",
 });
