@@ -21,7 +21,7 @@ export default function SplashScreen() {
 
             <TouchableOpacity
                 style={styles.button}
-                onPress={() => router.replace("/login")} // replace ensures no back cache
+                onPress={() => router.replace("/authentication/login")} // replace ensures no back cache
             >
                 <Text style={styles.buttonText}>Get Started</Text>
             </TouchableOpacity>

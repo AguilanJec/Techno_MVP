@@ -10,6 +10,7 @@ import {
     Alert,
     Image,
     Platform,
+    ActivityIndicator,
 } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { createUserWithEmailAndPassword, fetchSignInMethodsForEmail } from "firebase/auth";
@@ -17,7 +18,6 @@ import { doc, setDoc } from "firebase/firestore";
 import { auth, db } from "../../firebaseConfig";
 import * as Location from "expo-location";
 import * as ImagePicker from "expo-image-picker";
-
 
 export default function EditAddress() {
     const router = useRouter();
@@ -43,6 +43,13 @@ export default function EditAddress() {
     const [mapCoords, setMapCoords] = useState<{ latitude: number; longitude: number }>(DEFAULT);
     const [mapReady, setMapReady] = useState(false);
     const [loadingCoords, setLoadingCoords] = useState(true);
+
+    // Loading + errors
+    const [loading, setLoading] = useState(false);
+    const [nameError, setNameError] = useState("");
+    const [phoneError, setPhoneError] = useState("");
+    const [addressError, setAddressError] = useState("");
+    const [profilePhotoError, setProfilePhotoError] = useState("");
 
     // Dynamically require react-native-maps only on native platforms
     let MapView: any = null;
@@ -122,56 +129,7 @@ export default function EditAddress() {
         })();
     }, []);
 
-    // Save handler (firebase)
-    const handleSave = async () => {
-        try {
-            const emailString = String(emailParam || "");
-            const passwordString = String(passwordParam || "");
-
-            if (!emailString || !passwordString) {
-                Alert.alert("Error", "Missing email or password");
-                return;
-            }
-
-            const existingMethods = await fetchSignInMethodsForEmail(auth, emailString);
-            if (existingMethods.length > 0) {
-                Alert.alert("Error", "Email already exists.");
-                return;
-            }
-
-            const userCredential = await createUserWithEmailAndPassword(auth, emailString, passwordString);
-            const user = userCredential.user;
-
-            await setDoc(doc(db, "users", user.uid), {
-                name,
-                phone,
-                email: emailString,
-                address: addressDisplay,
-                addressDetails,
-                latitude: mapCoords.latitude,
-                picture: profilePhoto || null,
-                longitude: mapCoords.longitude,
-                createdAt: new Date(),
-            });
-
-            Alert.alert("Success", "Account created successfully!");
-            router.replace("/login");
-        } catch (error: any) {
-            console.error("Registration error:", error);
-            Alert.alert("Error", error?.message || "Registration failed");
-        }
-    };
-
-    // If map is loading show spinner
-    if (loadingCoords) {
-        return (
-            <View style={styles.centered}>
-                <Text>Loading location preview...</Text>
-            </View>
-        );
-    }
-
-
+    // Pick profile photo and set base64
     const pickProfilePhoto = async () => {
         try {
             const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -190,16 +148,112 @@ export default function EditAddress() {
             if (!result.canceled) {
                 const base64Img = `data:image/jpeg;base64,${result.assets[0].base64}`;
                 setProfilePhoto(base64Img);
+                setProfilePhotoError("");
             }
         } catch (err) {
             console.log("Image picker error:", err);
+            Alert.alert("Image Error", "Could not pick image. Try again.");
         }
     };
 
+    // Save handler with validation and loading indicator
+    const handleSave = async () => {
+        if (loading) return;
+        // reset errors
+        setNameError("");
+        setPhoneError("");
+        setAddressError("");
+        setProfilePhotoError("");
 
+        // Basic validation
+        let ok = true;
+
+        if (!name.trim()) {
+            setNameError("Name is required");
+            ok = false;
+        }
+
+        const digits = phone.replace(/\D/g, "");
+        if (!digits || digits.length < 7) {
+            setPhoneError("Enter a valid phone number");
+            ok = false;
+        }
+
+        if (!addressDisplay || addressDisplay.includes("No location selected")) {
+            setAddressError("Please confirm your address on the map");
+            ok = false;
+        }
+
+        if (!profilePhoto) {
+            setProfilePhotoError("Please upload a profile photo");
+            ok = false;
+        }
+
+        if (!ok) {
+            Alert.alert("Missing details", "Please fix the highlighted fields before saving.");
+            return;
+        }
+
+        setLoading(true);
+        try {
+            const emailString = String(emailParam || "").trim().toLowerCase();
+            const passwordString = String(passwordParam || "");
+
+            if (!emailString || !passwordString) {
+                Alert.alert("Error", "Missing email or password");
+                return;
+            }
+
+            // Check if auth email exists (best-effort)
+            try {
+                const existingMethods = await fetchSignInMethodsForEmail(auth, emailString);
+                if (existingMethods.length > 0) {
+                    Alert.alert("Error", "Email already exists.");
+                    return;
+                }
+            } catch (err) {
+                // If this fails, continue – createUser will throw if duplicate on server
+                console.warn("fetchSignInMethodsForEmail error:", err);
+            }
+
+            const userCredential = await createUserWithEmailAndPassword(auth, emailString, passwordString);
+            const user = userCredential.user;
+
+            await setDoc(doc(db, "users", user.uid), {
+                name: name.trim(),
+                phone: phone.trim(),
+                email: emailString,
+                address: addressDisplay,
+                addressDetails,
+                latitude: mapCoords.latitude,
+                picture: profilePhoto || null,
+                longitude: mapCoords.longitude,
+                createdAt: new Date(),
+            });
+
+            Alert.alert("Success", "Account created successfully!");
+            router.replace("/authentication/login");
+        } catch (error: any) {
+            console.error("Registration error:", error);
+            const message = error?.message || "Registration failed";
+            Alert.alert("Error", message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // If map is loading show spinner
+    if (loadingCoords) {
+        return (
+            <View style={styles.centered}>
+                <ActivityIndicator size="large" color="#6A4BBC" />
+                <Text style={{ marginTop: 8 }}>Loading location preview...</Text>
+            </View>
+        );
+    }
 
     return (
-        <ScrollView style={{ flex: 1, backgroundColor: "#EDE0FF" }}>
+        <ScrollView style={{ flex: 1, backgroundColor: "#EDE0FF" }} contentContainerStyle={{ paddingBottom: 40 }}>
             <TouchableOpacity onPress={() => router.push("/authentication/location")} style={styles.backButton}>
                 <Text style={styles.backText}>{"< Back"}</Text>
             </TouchableOpacity>
@@ -207,32 +261,54 @@ export default function EditAddress() {
             <Text style={styles.title}>Address Information</Text>
 
             <Text style={styles.label}>Name *</Text>
-            <TextInput style={styles.input} value={name} onChangeText={setName} />
+            <TextInput
+                style={[styles.input, nameError ? styles.inputError : null]}
+                value={name}
+                onChangeText={(t) => {
+                    setName(t);
+                    if (nameError) setNameError("");
+                }}
+                placeholder="Full name"
+                placeholderTextColor="#666"
+                selectionColor="#000"
+            />
+            {nameError ? <Text style={styles.fieldError}>{nameError}</Text> : null}
 
             <Text style={styles.label}>Phone number *</Text>
-            <View style={styles.phoneContainer}>
+            <View style={[styles.phoneContainer, phoneError ? styles.inputError : null]}>
                 <Text style={styles.phonePrefix}>PH +63</Text>
-                <TextInput style={styles.phoneInput} keyboardType="number-pad" value={phone} onChangeText={setPhone} />
+                <TextInput
+                    style={[styles.phoneInput]}
+                    keyboardType="number-pad"
+                    value={phone}
+                    onChangeText={(t) => {
+                        setPhone(t);
+                        if (phoneError) setPhoneError("");
+                    }}
+                    placeholder="9xxxxxxxx"
+                    placeholderTextColor="#666"
+                    selectionColor="#000"
+                />
             </View>
+            {phoneError ? <Text style={styles.fieldError}>{phoneError}</Text> : null}
 
             <Text style={styles.label}>Address *</Text>
-            <TouchableOpacity style={styles.addressPicker}>
+            <TouchableOpacity style={[styles.addressPicker, addressError ? styles.inputError : null]}>
                 <Text style={styles.addressText}>{addressDisplay}</Text>
                 <Text style={styles.small}>{addressDetails || "Tap Save to confirm"}</Text>
             </TouchableOpacity>
+            {addressError ? <Text style={styles.fieldError}>{addressError}</Text> : null}
 
             <Text style={styles.confirmText}>Confirm your map location</Text>
 
             <View style={styles.mapContainer}>
                 {Platform.OS === "web" ? (
-                    // safe fallback for web (no iframe)
                     <View style={styles.mapFallback}>
                         <Text style={{ textAlign: "center", color: "#333", padding: 10 }}>
                             Map preview not available on web. Use the mobile app to pick a location.
                         </Text>
                     </View>
                 ) : MapView ? (
-                    // Native MapView
                     <MapView
                         style={styles.map}
                         initialRegion={{
@@ -255,6 +331,7 @@ export default function EditAddress() {
                                 if (place) {
                                     const address = `${place.name || ""}${place.street ? ", " + place.street : ""}${place.city ? ", " + place.city : ""}${place.region ? ", " + place.region : ""}${place.country ? ", " + place.country : ""}`;
                                     setAddressDisplay(address);
+                                    if (addressError) setAddressError("");
                                 }
                             } catch {}
                         }}
@@ -270,13 +347,13 @@ export default function EditAddress() {
                                     if (place) {
                                         const address = `${place.name || ""}${place.street ? ", " + place.street : ""}${place.city ? ", " + place.city : ""}${place.region ? ", " + place.region : ""}${place.country ? ", " + place.country : ""}`;
                                         setAddressDisplay(address);
+                                        if (addressError) setAddressError("");
                                     }
                                 } catch {}
                             }}
                         />
                     </MapView>
                 ) : (
-                    // Safe fallback if react-native-maps isn't installed
                     <View style={styles.mapFallback}>
                         <Text style={{ textAlign: "center", color: "#333", padding: 10 }}>
                             Map component not available. Install react-native-maps or run the app on a device/emulator.
@@ -290,25 +367,40 @@ export default function EditAddress() {
 
             <Text style={styles.label}>Profile Picture *</Text>
 
-            <TouchableOpacity style={styles.photoPicker} onPress={pickProfilePhoto}>
+            <TouchableOpacity style={[styles.photoPicker, profilePhotoError ? styles.inputError : null]} onPress={pickProfilePhoto}>
                 {profilePhoto ? (
-                    <Image
-                        source={{ uri: profilePhoto }}
-                        style={styles.profileImage}
-                    />
+                    <Image source={{ uri: profilePhoto }} style={styles.profileImage} />
                 ) : (
                     <Text style={styles.photoPlaceholder}>Tap to upload photo</Text>
                 )}
             </TouchableOpacity>
-
+            {profilePhotoError ? <Text style={styles.fieldError}>{profilePhotoError}</Text> : null}
 
             <Text style={styles.label}>Address details</Text>
-            <TextInput style={styles.input} placeholder="Near 7/11" value={addressDetails} onChangeText={setAddressDetails} />
+            <TextInput
+                style={styles.input}
+                placeholder="Near 7/11"
+                placeholderTextColor="#666"
+                value={addressDetails}
+                onChangeText={setAddressDetails}
+                selectionColor="#000"
+            />
 
             <Text style={styles.privacy}>By clicking Save, you acknowledge that you have read the Privacy Policy.</Text>
 
-            <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-                <Text style={styles.saveText}>Save</Text>
+            <TouchableOpacity
+                style={[styles.saveButton, loading && styles.saveButtonDisabled]}
+                onPress={handleSave}
+                disabled={loading}
+            >
+                {loading ? (
+                    <View style={{ flexDirection: "row", alignItems: "center" }}>
+                        <ActivityIndicator color="#fff" style={{ marginRight: 10 }} />
+                        <Text style={styles.saveText}>Saving...</Text>
+                    </View>
+                ) : (
+                    <Text style={styles.saveText}>Save</Text>
+                )}
             </TouchableOpacity>
         </ScrollView>
     );
@@ -320,9 +412,11 @@ const styles = StyleSheet.create({
     backText: { color: "#6A4BBC", fontSize: 16 },
     title: { textAlign: "center", marginTop: 10, fontSize: 24, fontWeight: "bold", color: "#6A0DAD" },
     label: { marginHorizontal: 20, marginTop: 15, fontWeight: "600", fontSize: 16 },
-    input: { backgroundColor: "#F5F5F5", marginHorizontal: 20, borderRadius: 10, padding: 12, fontSize: 16, marginTop: 5 },
+    input: { backgroundColor: "#fff", color: "#000", marginHorizontal: 20, borderRadius: 10, padding: 12, fontSize: 16, marginTop: 5 },
+    inputError: { borderColor: "#FF0000", borderWidth: 2, backgroundColor: "#FFE6E6" },
+    fieldError: { color: "#FF0000", marginLeft: 20, marginTop: 6, fontSize: 13 },
     phoneContainer: {
-        backgroundColor: "#F5F5F5",
+        backgroundColor: "#fff",
         marginHorizontal: 20,
         borderRadius: 10,
         paddingHorizontal: 15,
@@ -331,10 +425,10 @@ const styles = StyleSheet.create({
         marginTop: 5,
         height: 45,
     },
-    phonePrefix: { marginRight: 10, fontSize: 16, fontWeight: "600" },
-    phoneInput: { flex: 1, fontSize: 16 },
-    addressPicker: { backgroundColor: "#F5F5F5", marginHorizontal: 20, borderRadius: 10, padding: 12, marginTop: 5 },
-    addressText: { fontSize: 17, fontWeight: "600" },
+    phonePrefix: { marginRight: 10, fontSize: 16, fontWeight: "600", color: "#000" },
+    phoneInput: { flex: 1, fontSize: 16, color: "#000" },
+    addressPicker: { backgroundColor: "#fff", marginHorizontal: 20, borderRadius: 10, padding: 12, marginTop: 5 },
+    addressText: { fontSize: 17, fontWeight: "600", color: "#000" },
     small: { fontSize: 13, color: "#555" },
     confirmText: { marginTop: 18, marginLeft: 20, fontWeight: "600" },
     mapContainer: { width: "90%", alignSelf: "center", height: 200, borderRadius: 15, overflow: "hidden", marginTop: 10, backgroundColor: "#ddd" },
@@ -342,10 +436,11 @@ const styles = StyleSheet.create({
     mapFallback: { flex: 1, justifyContent: "center", alignItems: "center", padding: 12 },
     privacy: { marginTop: 15, textAlign: "center", fontSize: 12, color: "#555", paddingHorizontal: 20 },
     saveButton: { backgroundColor: "#C39BFF", margin: 20, paddingVertical: 12, borderRadius: 25, alignItems: "center" },
+    saveButtonDisabled: { opacity: 0.75 },
     saveText: { fontSize: 18, fontWeight: "700", color: "#fff" },
     photoPicker: {
         marginHorizontal: 20,
-        backgroundColor: "#F5F5F5",
+        backgroundColor: "#fff",
         height: 180,
         borderRadius: 15,
         justifyContent: "center",

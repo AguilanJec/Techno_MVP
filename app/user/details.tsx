@@ -320,7 +320,7 @@ export default function Details() {
             // param names expected by ChatScreen: conversationId, otherUserName, otherUserId, userType
             if (existingConversation) {
                 router.push(
-                    `/chat?conversationId=${encodeURIComponent(existingConversation.id)}&otherUserName=${encodeURIComponent(
+                    `/user/chat?conversationId=${encodeURIComponent(existingConversation.id)}&otherUserName=${encodeURIComponent(
                         tutor.name
                     )}&otherUserId=${encodeURIComponent(tutor.id)}&userType=provider`
                 );
@@ -337,7 +337,7 @@ export default function Details() {
                 const docRef = await addDoc(collection(db, "conversations"), newConversation);
 
                 router.push(
-                    `/chat?conversationId=${encodeURIComponent(docRef.id)}&otherUserName=${encodeURIComponent(
+                    `/user/chat?conversationId=${encodeURIComponent(docRef.id)}&otherUserName=${encodeURIComponent(
                         tutor.name
                     )}&otherUserId=${encodeURIComponent(tutor.id)}&userType=provider`
                 );
@@ -629,7 +629,7 @@ export default function Details() {
                 <TouchableOpacity onPress={() => router.push("/user/search")}>
                     <Ionicons name="search-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => router.push("/message")}>
+                <TouchableOpacity onPress={() => router.push("/user/message")}>
                     <Ionicons name="chatbubble-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => router.push("/user/account")}>

@@ -294,7 +294,7 @@ export default function FeedbackScreen() {
             {/* GREETING */}
             <View style={styles.greetingContainer}>
                 <Text style={styles.greetingText}>Hi Tony Stark!</Text>
-                <Image source={require("../assets/images/female.png")} style={styles.femaleImage} />
+                <Image source={require("../../assets/images/female.png")} style={styles.femaleImage} />
             </View>
 
             {/* MESSAGES */}
@@ -356,7 +356,7 @@ export default function FeedbackScreen() {
                 <TouchableOpacity onPress={() => router.push("/user/search")}>
                     <Ionicons name="search-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => router.push("/message")}>
+                <TouchableOpacity onPress={() => router.push("/user/message")}>
                     <Ionicons name="chatbubble-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => router.push("/user/account")}>

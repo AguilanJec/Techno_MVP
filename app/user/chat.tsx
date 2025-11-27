@@ -12,7 +12,10 @@ import {
     KeyboardAvoidingView,
     Platform,
     ActivityIndicator,
-    Linking
+    Linking,
+    Keyboard,
+    NativeSyntheticEvent,
+    TextInputSubmitEditingEventData,
 } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
@@ -22,7 +25,6 @@ import { Ionicons } from "@expo/vector-icons";
 import {
     collection,
     query,
-    where,
     onSnapshot,
     orderBy,
     addDoc,
@@ -31,7 +33,7 @@ import {
     getDoc,
     serverTimestamp
 } from "firebase/firestore";
-import { db } from "../firebaseConfig";
+import { db } from "../../firebaseConfig";
 import { getAuth } from "firebase/auth";
 
 interface Message {
@@ -68,79 +70,86 @@ export default function ChatScreen() {
     const [otherUserData, setOtherUserData] = useState<any>(null);
     const [isSending, setIsSending] = useState(false);
 
+    // show/hide extra action icons
+    const [showExtras, setShowExtras] = useState(true);
+
+    // approximate input row height (used for FlatList bottom padding)
+    const INPUT_ROW_HEIGHT = 84;
+
+    // keyboard helpers
+    const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+
     const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
     const flatListRef = useRef<FlatList>(null);
+    const inputRef = useRef<TextInput | null>(null);
+
     const auth = getAuth();
     const currentUser = auth.currentUser;
 
     useEffect(() => {
         if (conversationId && currentUser) {
-            setupMessagesListener();
+            const unsub = setupMessagesListener();
             markConversationAsRead();
             fetchOtherUserData();
+            return () => {
+                if (unsub && typeof unsub === "function") unsub();
+            };
         } else {
             setIsLoading(false);
         }
-        // cleanup on unmount
-        return () => {
-            if (sound) sound.unloadAsync();
-            if (recordingTimerRef.current) {
-                clearInterval(recordingTimerRef.current);
-            }
-        };
     }, [conversationId, currentUser]);
 
-    // --- sanitize base64 / data URI / http url ---
+    // lightweight keyboard listeners to scroll and keep state (no heavy layout math)
+    useEffect(() => {
+        const showSub = Keyboard.addListener('keyboardDidShow', () => {
+            setIsKeyboardVisible(true);
+            // ensure chat scrolls to bottom when keyboard appears
+            setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
+        });
+        const hideSub = Keyboard.addListener('keyboardDidHide', () => {
+            setIsKeyboardVisible(false);
+            // ensure chat scrolls to bottom when keyboard hides
+            setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
+        });
+
+        return () => {
+            showSub.remove();
+            hideSub.remove();
+        };
+    }, []);
+
+    // sanitize picture helper (unchanged)
     const sanitizePictureUri = useCallback((raw?: string | null) => {
         if (!raw) return null;
         let s = raw.trim();
-
-        // unwrap url(...) wrappers and surrounding quotes
         const urlMatch = s.match(/^url\(["']?(.*?)["']?\)$/i);
         if (urlMatch && urlMatch[1]) s = urlMatch[1];
-
-        // if it's an http(s) url, return as is
         if (/^https?:\/\//i.test(s)) return s;
-
-        // if it's already a data URI (data:image/...), return as is
         if (/^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(s)) return s;
-
-        // sometimes firestore might have "data:imag..." truncated - try to repair if possible
         if (/^data:imag[e]*/i.test(s) && s.includes("base64,")) {
             return s.replace(/^data:imag/, "data:image");
         }
-
-        // raw base64 detection: JPEG header often starts with '/9j/' in base64, png has 'iVBOR', gif has 'R0lGOD'
         if (/^(\/9j\/|iVBOR|R0lGOD)/.test(s)) {
             return `data:image/jpeg;base64,${s}`;
         }
-
-        // if it contains only base64 chars and is long, assume base64 jpeg
         if (/^[A-Za-z0-9+/=\s]+$/.test(s) && s.length > 100) {
             return `data:image/jpeg;base64,${s}`;
         }
-
         return null;
     }, []);
 
-    // fetch other user document and set pictureUri in state
     const fetchOtherUserData = async () => {
         if (!otherUserId) {
             setIsLoading(false);
             return;
         }
-
         try {
             const collectionName = userType === "provider" ? "providers" : "users";
-            // try primary collection
             let userDoc = await getDoc(doc(db, collectionName, otherUserId));
-
-            // fallback to the other collection if not found
             if (!userDoc.exists()) {
                 const alt = collectionName === "providers" ? "users" : "providers";
                 userDoc = await getDoc(doc(db, alt, otherUserId));
             }
-
             if (userDoc.exists()) {
                 const raw = userDoc.data();
                 const pictureUri = sanitizePictureUri(raw?.picture ?? null);
@@ -161,13 +170,11 @@ export default function ChatScreen() {
 
     const setupMessagesListener = () => {
         if (!conversationId) return;
-
         try {
             const messagesQuery = query(
                 collection(db, "conversations", conversationId, "messages"),
                 orderBy("time", "asc")
             );
-
             const unsubscribe = onSnapshot(messagesQuery,
                 (snapshot) => {
                     const messagesData: Message[] = [];
@@ -190,6 +197,8 @@ export default function ChatScreen() {
                         } as Message);
                     });
                     setMessages(messagesData);
+                    // auto-scroll when new messages arrive
+                    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
                 },
                 (error) => {
                     console.error("Error in messages listener:", error);
@@ -197,7 +206,6 @@ export default function ChatScreen() {
                     setIsLoading(false);
                 }
             );
-
             return unsubscribe;
         } catch (error) {
             console.error("Error setting up messages listener:", error);
@@ -207,7 +215,6 @@ export default function ChatScreen() {
 
     const markConversationAsRead = async () => {
         if (!currentUser || !conversationId) return;
-
         try {
             await updateDoc(doc(db, "conversations", conversationId), {
                 unread: false,
@@ -220,17 +227,14 @@ export default function ChatScreen() {
 
     const sendMessage = async (messageData: Partial<Message>) => {
         if (!currentUser || !conversationId) return;
-
         try {
             setIsSending(true);
-
             const message: any = {
                 text: messageData.text || "",
                 senderId: currentUser.uid,
                 time: serverTimestamp(),
                 type: messageData.type || "text",
             };
-
             if (messageData.imageUri) message.imageUri = messageData.imageUri;
             if (messageData.voiceUri) message.voiceUri = messageData.voiceUri;
             if (messageData.fileName) message.fileName = messageData.fileName;
@@ -239,10 +243,8 @@ export default function ChatScreen() {
             if (messageData.fileUri) message.fileUri = messageData.fileUri;
             if (messageData.duration) message.duration = messageData.duration;
             if (messageData.callAction) message.callAction = messageData.callAction;
-
             await addDoc(collection(db, "conversations", conversationId, "messages"), message);
 
-            // update conversation summary
             let lastMessageText = "";
             switch (messageData.type) {
                 case "text":
@@ -270,7 +272,6 @@ export default function ChatScreen() {
                 lastMessageSender: currentUser.uid,
                 unread: true
             });
-
         } catch (error) {
             console.error("Error sending message:", error);
             Alert.alert("Error", "Failed to send message");
@@ -279,7 +280,7 @@ export default function ChatScreen() {
         }
     };
 
-    // file/image/voice helpers (kept as before)
+    // file/image/voice helpers (kept as before - unchanged)
     const pickFile = async () => {
         try {
             const result = await DocumentPicker.getDocumentAsync({
@@ -287,14 +288,11 @@ export default function ChatScreen() {
                 copyToCacheDirectory: true,
                 multiple: false,
             });
-
             if ((result as any).canceled) return;
-
             const file = (result as any).assets?.[0] ?? result;
             if (file) {
                 const fileSizeInKB = Math.round((file.size || 0) / 1024);
                 const fileType = (file.mimeType || file.type) || 'Unknown type';
-
                 await sendMessage({
                     text: `Sent file: ${file.name}`,
                     type: "file",
@@ -335,13 +333,11 @@ export default function ChatScreen() {
                 Alert.alert("Permission required", "Please grant microphone permission to record voice messages.");
                 return;
             }
-
             await Audio.setAudioModeAsync({
                 allowsRecordingIOS: true,
                 playsInSilentModeIOS: true,
                 staysActiveInBackground: true,
             });
-
             const { recording } = await Audio.Recording.createAsync(
                 Audio.RecordingOptionsPresets.HIGH_QUALITY
             );
@@ -349,6 +345,7 @@ export default function ChatScreen() {
             setIsRecording(true);
             setRecordingDuration(0);
 
+            // timer
             // @ts-ignore
             recordingTimerRef.current = setInterval(() => {
                 setRecordingDuration(prev => prev + 1);
@@ -361,12 +358,10 @@ export default function ChatScreen() {
 
     const stopRecording = async () => {
         if (!recording) return;
-
         if (recordingTimerRef.current) {
             clearInterval(recordingTimerRef.current);
             recordingTimerRef.current = null;
         }
-
         setIsRecording(false);
         await recording.stopAndUnloadAsync();
         const uri = recording.getURI();
@@ -382,7 +377,6 @@ export default function ChatScreen() {
         } else if (recordingDuration <= 1) {
             Alert.alert("Too Short", "Please record a longer voice message");
         }
-
         setRecordingDuration(0);
     };
 
@@ -403,18 +397,15 @@ export default function ChatScreen() {
     const pickImage = async () => {
         try {
             const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-
             if (!permissionResult.granted) {
                 Alert.alert("Permission required", "Sorry, we need camera roll permissions to make this work!");
                 return;
             }
-
             const result = await ImagePicker.launchImageLibraryAsync({
                 mediaTypes: ImagePicker.MediaTypeOptions.Images,
                 allowsEditing: true,
                 quality: 0.8,
             });
-
             if (!result.canceled && result.assets?.[0]) {
                 await sendMessage({
                     text: "Photo",
@@ -431,17 +422,14 @@ export default function ChatScreen() {
     const takePhoto = async () => {
         try {
             const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
-
             if (!permissionResult.granted) {
                 Alert.alert("Permission required", "Sorry, we need camera permissions to make this work!");
                 return;
             }
-
             const result = await ImagePicker.launchCameraAsync({
                 allowsEditing: true,
                 quality: 0.8,
             });
-
             if (!result.canceled && result.assets?.[0]) {
                 await sendMessage({
                     text: "Photo",
@@ -457,13 +445,11 @@ export default function ChatScreen() {
 
     const handleCall = () => {
         const phoneNumber = otherUserData?.phone || "+1234567890";
-
         sendMessage({
             type: "call",
             callAction: "started",
             text: "Call started"
         });
-
         Linking.openURL(`tel:${phoneNumber}`)
             .catch(err => {
                 console.error('Error opening phone dialer:', err);
@@ -477,12 +463,13 @@ export default function ChatScreen() {
 
     const handleSendMessage = () => {
         if (newMessage.trim() === "" || isSending) return;
-
         sendMessage({
             text: newMessage.trim(),
             type: "text",
         });
         setNewMessage("");
+        // keep input focused so user can continue typing
+        setTimeout(() => inputRef.current?.focus(), 50);
     };
 
     const formatMessageTime = (timestamp: any) => {
@@ -655,9 +642,11 @@ export default function ChatScreen() {
         );
     }
 
-    // header display: prefer fetched doc name then param
     const headerDisplayName = otherUserData?.name || otherUserNameParam || "Unknown User";
     const headerPictureUri = otherUserData?.pictureUri ?? null;
+
+    // keep flatlist bottom padding so messages don't hide behind input
+    const flatListPaddingBottom = INPUT_ROW_HEIGHT + (Platform.OS === 'ios' ? 34 : 16);
 
     return (
         <SafeAreaView style={styles.container}>
@@ -672,9 +661,7 @@ export default function ChatScreen() {
                             source={{ uri: headerPictureUri }}
                             style={styles.avatarImage}
                             onError={() => {
-                                // if the image fails to load, clear pictureUri so initials show
-                                setOtherUserData(prev => prev ? { ...prev, pictureUri: null } : prev);
-                            }}
+                                setOtherUserData((prev: any) => prev ? { ...prev, pictureUri: null } : prev);                            }}
                         />
                     ) : (
                         <View style={styles.avatar}>
@@ -702,18 +689,15 @@ export default function ChatScreen() {
                 </View>
             </View>
 
-            <KeyboardAvoidingView
-                style={styles.chatContainer}
-                behavior={Platform.OS === "ios" ? "padding" : "height"}
-                keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
-            >
+            {/* messages area */}
+            <View style={{ flex: 1 }}>
                 <FlatList
                     ref={flatListRef}
                     data={messages}
                     renderItem={renderMessage}
                     keyExtractor={(item) => item.id}
                     style={styles.messagesList}
-                    contentContainerStyle={styles.messagesContainer}
+                    contentContainerStyle={[styles.messagesContainer, { paddingBottom: flatListPaddingBottom }]}
                     showsVerticalScrollIndicator={false}
                     onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
                     ListEmptyComponent={
@@ -724,48 +708,78 @@ export default function ChatScreen() {
                         </View>
                     }
                 />
+            </View>
 
-                {isRecording && (
-                    <View style={styles.recordingIndicator}>
-                        <Ionicons name="mic" size={16} color="#fff" />
-                        <Text style={styles.recordingText}>Recording... {recordingDuration}s</Text>
-                        <View style={styles.recordingDot} />
-                    </View>
-                )}
+            {/* Absolute pinned input; wrapped in KeyboardAvoidingView so it moves up on iOS */}
+            <KeyboardAvoidingView
+                behavior={Platform.OS === "ios" ? "padding" : "height"}
+                keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 0}
+                pointerEvents="box-none"
+            >
+                <View style={[styles.inputContainerAbsolute, Platform.OS === 'ios' ? { paddingBottom: 8 } : { paddingBottom: 8 }]}>
+                    {showExtras ? (
+                        <>
+                            <TouchableOpacity onPress={pickFile} style={styles.iconButton}>
+                                <Ionicons name="attach" size={24} color="#4B3C88" />
+                            </TouchableOpacity>
 
-                <View style={styles.inputContainer}>
-                    <TouchableOpacity onPress={pickFile} style={styles.iconButton}>
-                        <Ionicons name="attach" size={24} color="#4B3C88" />
-                    </TouchableOpacity>
+                            <TouchableOpacity onPress={takePhoto} style={styles.iconButton}>
+                                <Ionicons name="camera" size={24} color="#4B3C88" />
+                            </TouchableOpacity>
 
-                    <TouchableOpacity onPress={takePhoto} style={styles.iconButton}>
-                        <Ionicons name="camera" size={24} color="#4B3C88" />
-                    </TouchableOpacity>
+                            <TouchableOpacity onPress={pickImage} style={styles.iconButton}>
+                                <Ionicons name="image" size={24} color="#4B3C88" />
+                            </TouchableOpacity>
 
-                    <TouchableOpacity onPress={pickImage} style={styles.iconButton}>
-                        <Ionicons name="image" size={24} color="#4B3C88" />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        onPress={isRecording ? stopRecording : startRecording}
-                        style={[styles.iconButton, isRecording && styles.recordingButton]}
-                    >
-                        <Ionicons
-                            name={isRecording ? "stop-circle" : "mic"}
-                            size={24}
-                            color={isRecording ? "#FF6B6B" : "#4B3C88"}
-                        />
-                    </TouchableOpacity>
+                            <TouchableOpacity
+                                onPress={isRecording ? stopRecording : startRecording}
+                                style={[styles.iconButton, isRecording && styles.recordingButton]}
+                            >
+                                <Ionicons
+                                    name={isRecording ? "stop-circle" : "mic"}
+                                    size={24}
+                                    color={isRecording ? "#FF6B6B" : "#4B3C88"}
+                                />
+                            </TouchableOpacity>
+                        </>
+                    ) : null}
 
                     <TextInput
-                        style={styles.textInput}
+                        ref={inputRef}
+                        style={[
+                            styles.textInput,
+                            !showExtras ? { marginRight: 8 } : { marginRight: 8 }
+                        ]}
                         placeholder="Type a message..."
                         value={newMessage}
                         onChangeText={setNewMessage}
                         multiline
                         placeholderTextColor="#999"
                         editable={!isSending}
+                        onFocus={() => {
+                            // hide action icons when user focuses input
+                            setShowExtras(false);
+                        }}
+                        onSubmitEditing={(e: NativeSyntheticEvent<TextInputSubmitEditingEventData>) => {
+                            // On pressing "send" from keyboard on single-line input
+                            if (!e.nativeEvent.text) return;
+                            handleSendMessage();
+                        }}
                     />
+
+                    {!showExtras ? (
+                        <TouchableOpacity
+                            onPress={() => {
+                                inputRef.current?.blur();
+                                Keyboard.dismiss();
+                                // small delay so the UI doesn't flash
+                                setTimeout(() => setShowExtras(true), 120);
+                            }}
+                            style={styles.toggleExtrasButton}
+                        >
+                            <Ionicons name="chevron-up" size={20} color="#4B3C88" />
+                        </TouchableOpacity>
+                    ) : null}
 
                     <TouchableOpacity
                         onPress={handleSendMessage}
@@ -822,7 +836,6 @@ const styles = StyleSheet.create({
         fontWeight: "bold",
         fontSize: 16,
     },
-    // header avatar image
     avatarImage: {
         width: 44,
         height: 44,
@@ -861,7 +874,7 @@ const styles = StyleSheet.create({
     },
     messagesContainer: {
         padding: 16,
-        paddingBottom: 10,
+        paddingBottom: 16,
     },
     messageContainer: {
         marginVertical: 4,
@@ -996,13 +1009,35 @@ const styles = StyleSheet.create({
     otherImageCaption: {
         color: "#666",
     },
+
+    /* INPUT ROW styles (original) */
     inputContainer: {
         flexDirection: "row",
         alignItems: "center",
-        padding: 16,
+        padding: 12,
         backgroundColor: "#fff",
         borderTopWidth: 1,
         borderTopColor: "#E8D8F5",
+    },
+    /* NEW: absolute pinned input */
+    inputContainerAbsolute: {
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        bottom: 0,
+        flexDirection: "row",
+        alignItems: "center",
+        paddingHorizontal: 12,
+        paddingTop: 12,
+        backgroundColor: "#fff",
+        borderTopWidth: 1,
+        borderTopColor: "#E8D8F5",
+        // small elevation/shadow so input sits above messages
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: -1 },
+        shadowOpacity: 0.06,
+        shadowRadius: 6,
+        elevation: 6,
     },
     iconButton: {
         padding: 10,
@@ -1024,6 +1059,15 @@ const styles = StyleSheet.create({
         fontSize: 16,
         color: "#333",
     },
+    toggleExtrasButton: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        backgroundColor: "#F4EDFF",
+        justifyContent: "center",
+        alignItems: "center",
+        marginRight: 8,
+    },
     sendButton: {
         backgroundColor: "#BFA2E0",
         width: 44,
@@ -1035,6 +1079,7 @@ const styles = StyleSheet.create({
     sendButtonDisabled: {
         backgroundColor: "#ccc",
     },
+
     recordingIndicator: {
         flexDirection: "row",
         alignItems: "center",

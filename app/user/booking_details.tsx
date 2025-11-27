@@ -37,6 +37,13 @@ type Appointment = {
     ratePerHour?: number;
     durationHours?: number;
     userId?: string;
+    userEmail?: string;
+    schedule?: {
+        days?: string[];
+        name?: string;
+    };
+    createdAt?: any;
+    updatedAt?: any;
 };
 
 function pad(n: number) {
@@ -51,6 +58,55 @@ function toDecimalHour(hour12: number, minute: string, ampm: 'AM' | 'PM') {
 
 function timeLabel(hour12: number, minute: string, ampm: 'AM' | 'PM') {
     return `${hour12}:${minute} ${ampm}`;
+}
+
+function formatAppointmentType(type?: string): string {
+    switch (type) {
+        case 'one_time':
+            return 'One-time Appointment';
+        case 'schedule':
+            return 'Scheduled (Recurring)';
+        default:
+            return type ?? '—';
+    }
+}
+
+function formatDays(days?: string[]): string {
+    if (!days || days.length === 0) return '—';
+
+    const dayMap: { [key: string]: string } = {
+        'mon': 'Monday',
+        'tue': 'Tuesday',
+        'wed': 'Wednesday',
+        'thu': 'Thursday',
+        'fri': 'Friday',
+        'sat': 'Saturday',
+        'sun': 'Sunday'
+    };
+
+    return days.map(day => dayMap[day] || day).join(', ');
+}
+
+function formatTimestamp(timestamp: any): string {
+    if (!timestamp) return '—';
+    try {
+        const date = timestamp.toDate();
+        return date.toLocaleDateString('en-US', {
+            weekday: 'short',
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    } catch (error) {
+        return '—';
+    }
+}
+
+function calculateTotalCost(ratePerHour?: number, durationHours?: number): string {
+    if (!ratePerHour || !durationHours) return '—';
+    return `₱${(ratePerHour * durationHours).toFixed(2)}`;
 }
 
 export default function BookingDetailsScreen() {
@@ -117,6 +173,10 @@ export default function BookingDetailsScreen() {
                     ratePerHour: d.ratePerHour,
                     durationHours: d.durationHours,
                     userId: d.userId,
+                    userEmail: d.userEmail,
+                    schedule: d.schedule,
+                    createdAt: d.createdAt,
+                    updatedAt: d.updatedAt,
                 };
                 setAppointment(appt);
 
@@ -172,6 +232,18 @@ export default function BookingDetailsScreen() {
         if (!appointment) return false;
         return (appointment.status ?? '').toLowerCase() === 'pending';
     }, [appointment]);
+
+    const durationHours = useMemo(() => {
+        const s = toDecimalHour(startHour, startMinute, startAmpm);
+        const e = toDecimalHour(endHour, endMinute, endAmpm);
+        let diff = e - s;
+        if (diff <= 0) diff += 24;
+        return diff;
+    }, [startHour, startMinute, startAmpm, endHour, endMinute, endAmpm]);
+
+    const totalCost = useMemo(() => {
+        return calculateTotalCost(appointment?.ratePerHour, durationHours);
+    }, [appointment?.ratePerHour, durationHours]);
 
     // helpers for date/time pickers
     function openTimePicker(target: 'start' | 'end') {
@@ -259,14 +331,6 @@ export default function BookingDetailsScreen() {
         }
     }
 
-    const durationHours = useMemo(() => {
-        const s = toDecimalHour(startHour, startMinute, startAmpm);
-        const e = toDecimalHour(endHour, endMinute, endAmpm);
-        let diff = e - s;
-        if (diff <= 0) diff += 24;
-        return diff;
-    }, [startHour, startMinute, startAmpm, endHour, endMinute, endAmpm]);
-
     async function saveChanges() {
         if (!appointment) return;
         if (!currentUser) {
@@ -322,6 +386,7 @@ export default function BookingDetailsScreen() {
                 endTime: payload.endTime,
                 notes: payload.notes,
                 durationHours: payload.durationHours,
+                updatedAt: serverTimestamp(),
             } : prev);
         } catch (err) {
             console.error('Failed to save:', err);
@@ -460,30 +525,64 @@ export default function BookingDetailsScreen() {
             </View>
 
             <ScrollView contentContainerStyle={styles.scroll}>
+                {/* Main Booking Card */}
                 <View style={styles.card}>
                     <Text style={styles.title}>{appointment.providerName ?? 'Provider'}</Text>
+
+                    {/* Status Badge */}
                     <View style={{ marginTop: 8 }}>
                         <Text style={styles.smallLabel}>Status</Text>
-                        <View style={[styles.statusBox, statusLower === 'pending' && styles.statusPending, statusLower === 'ongoing' && styles.statusOngoing, statusLower === 'completed' && styles.statusCompleted, statusLower === 'cancelled' && { backgroundColor: '#f8d7da' }]}>
-                            <Text style={[styles.statusText, statusLower === 'pending' && styles.statusTextPending, statusLower === 'ongoing' && styles.statusTextOngoing, statusLower === 'completed' && styles.statusTextCompleted, statusLower === 'cancelled' && { color: '#721c24' }]}>{appointment.status}</Text>
+                        <View style={[styles.statusBox, statusLower === 'pending' && styles.statusPending, statusLower === 'ongoing' && styles.statusOngoing, statusLower === 'completed' && styles.statusCompleted, statusLower === 'cancelled' && styles.statusCancelled]}>
+                            <Text style={[styles.statusText, statusLower === 'pending' && styles.statusTextPending, statusLower === 'ongoing' && styles.statusTextOngoing, statusLower === 'completed' && styles.statusTextCompleted, statusLower === 'cancelled' && styles.statusTextCancelled]}>
+                                {appointment.status?.toUpperCase()}
+                            </Text>
                         </View>
                     </View>
 
+                    {/* Appointment Type */}
                     <View style={{ marginTop: 12 }}>
-                        <Text style={styles.smallLabel}>Type</Text>
-                        <Text style={styles.valueText}>{appointment.appointmentType ?? '—'}</Text>
+                        <Text style={styles.smallLabel}>Appointment Type</Text>
+                        <Text style={styles.valueText}>{formatAppointmentType(appointment.appointmentType)}</Text>
                     </View>
+
+                    {/* Schedule Details for Recurring Appointments */}
+                    {appointment.appointmentType === 'schedule' && appointment.schedule && (
+                        <>
+                            <View style={{ marginTop: 12 }}>
+                                <Text style={styles.smallLabel}>Schedule Days</Text>
+                                <Text style={styles.valueText}>{formatDays(appointment.schedule.days)}</Text>
+                            </View>
+                            <View style={{ marginTop: 12 }}>
+                                <Text style={styles.smallLabel}>Schedule Name</Text>
+                                <Text style={styles.valueText}>{appointment.schedule.name ?? '—'}</Text>
+                            </View>
+                        </>
+                    )}
 
                     {/* Date (one_time) */}
                     {appointment.appointmentType === 'one_time' && (
                         <View style={{ marginTop: 12 }}>
                             <Text style={styles.smallLabel}>Date</Text>
                             {!editing ? (
-                                <Text style={styles.valueText}>{appointment.date ?? '—'}</Text>
+                                <Text style={styles.valueText}>
+                                    {appointment.date ? new Date(appointment.date).toLocaleDateString('en-US', {
+                                        weekday: 'long',
+                                        year: 'numeric',
+                                        month: 'long',
+                                        day: 'numeric'
+                                    }) : '—'}
+                                </Text>
                             ) : (
                                 <>
                                     <TouchableOpacity style={styles.inputBtn} onPress={() => setShowDatePicker(true)}>
-                                        <Text style={styles.inputBtnText}>{date ?? 'Pick date'}</Text>
+                                        <Text style={styles.inputBtnText}>
+                                            {date ? new Date(date).toLocaleDateString('en-US', {
+                                                weekday: 'short',
+                                                month: 'short',
+                                                day: 'numeric'
+                                            }) : 'Pick date'}
+                                        </Text>
+                                        <Ionicons name="calendar-outline" size={16} color="#b58dde" style={{ marginLeft: 8 }} />
                                     </TouchableOpacity>
                                     {showDatePicker && (
                                         <DateTimePicker
@@ -512,9 +611,11 @@ export default function BookingDetailsScreen() {
                             <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
                                 <TouchableOpacity style={styles.inputBtn} onPress={() => openTimePicker('start')}>
                                     <Text style={styles.inputBtnText}>{timeLabel(startHour, startMinute, startAmpm)}</Text>
+                                    <Ionicons name="time-outline" size={16} color="#b58dde" style={{ marginLeft: 8 }} />
                                 </TouchableOpacity>
                                 <TouchableOpacity style={styles.inputBtn} onPress={() => openTimePicker('end')}>
                                     <Text style={styles.inputBtnText}>{timeLabel(endHour, endMinute, endAmpm)}</Text>
+                                    <Ionicons name="time-outline" size={16} color="#b58dde" style={{ marginLeft: 8 }} />
                                 </TouchableOpacity>
 
                                 {showTimePicker && (
@@ -533,107 +634,181 @@ export default function BookingDetailsScreen() {
                         )}
                     </View>
 
-                    <View style={{ marginTop: 12 }}>
-                        <Text style={styles.smallLabel}>Duration</Text>
-                        <Text style={styles.valueText}>{durationHours.toFixed(2)} hours</Text>
+                    {/* Pricing Information */}
+                    <View style={styles.pricingSection}>
+                        <View style={styles.pricingRow}>
+                            <Text style={styles.pricingLabel}>Duration</Text>
+                            <Text style={styles.pricingValue}>{durationHours.toFixed(2)} hours</Text>
+                        </View>
+                        <View style={styles.pricingRow}>
+                            <Text style={styles.pricingLabel}>Rate</Text>
+                            <Text style={styles.pricingValue}>₱{appointment.ratePerHour?.toFixed(2)}/hour</Text>
+                        </View>
+                        <View style={[styles.pricingRow, styles.totalRow]}>
+                            <Text style={styles.totalLabel}>Total Cost</Text>
+                            <Text style={styles.totalValue}>{totalCost}</Text>
+                        </View>
                     </View>
 
-                    <View style={{ marginTop: 12 }}>
+                    {/* Notes */}
+                    <View style={{ marginTop: 16 }}>
                         <Text style={styles.smallLabel}>Notes</Text>
                         {!editing ? (
-                            <Text style={styles.valueText}>{appointment.notes ?? '—'}</Text>
+                            <Text style={[styles.valueText, !appointment.notes && { color: '#999', fontStyle: 'italic' }]}>
+                                {appointment.notes || 'No notes provided'}
+                            </Text>
                         ) : (
                             <TextInput
                                 value={notes}
                                 onChangeText={setNotes}
                                 style={styles.notesInput}
-                                placeholder="Add notes..."
+                                placeholder="Add any special instructions or notes..."
                                 multiline
+                                placeholderTextColor="#999"
                             />
                         )}
                     </View>
 
-                    <View style={{ marginTop: 18, flexDirection: 'row', justifyContent: 'space-between' }}>
-                        {/* If pending -> show Edit & Cancel; otherwise only Close */}
+                    {/* Action Buttons */}
+                    {/* Action Buttons */}
+                    <View style={{ marginTop: 24, flexDirection: 'row', justifyContent: 'center' }}>
                         {canEdit ? (
                             editing ? (
                                 <>
-                                    <TouchableOpacity style={[styles.btn, { backgroundColor: '#e9ecef' }]} onPress={() => { setEditing(false); /* reload original values from appointment */ setDate(appointment.date ?? null); if (appointment.startTime) { setStartHour(appointment.startTime.hour12); setStartMinute(appointment.startTime.minute); setStartAmpm(appointment.startTime.ampm); } if (appointment.endTime) { setEndHour(appointment.endTime.hour12); setEndMinute(appointment.endTime.minute); setEndAmpm(appointment.endTime.ampm); } setNotes(appointment.notes ?? ''); }}>
-                                        <Text style={{ color: '#333', fontWeight: '700' }}>Cancel</Text>
+                                    <TouchableOpacity
+                                        style={[styles.btn, styles.btnSecondary]}
+                                        onPress={() => {
+                                            setEditing(false);
+                                            setDate(appointment.date ?? null);
+                                            if (appointment.startTime) {
+                                                setStartHour(appointment.startTime.hour12);
+                                                setStartMinute(appointment.startTime.minute);
+                                                setStartAmpm(appointment.startTime.ampm);
+                                            }
+                                            if (appointment.endTime) {
+                                                setEndHour(appointment.endTime.hour12);
+                                                setEndMinute(appointment.endTime.minute);
+                                                setEndAmpm(appointment.endTime.ampm);
+                                            }
+                                            setNotes(appointment.notes ?? '');
+                                        }}
+                                        disabled={saving}
+                                    >
+                                        <Text style={styles.btnSecondaryText}>Cancel</Text>
                                     </TouchableOpacity>
 
-                                    <TouchableOpacity style={styles.btnPrimary} onPress={saveChanges} disabled={saving}>
-                                        <Text style={{ color: '#fff', fontWeight: '700' }}>{saving ? 'Saving…' : 'Save changes'}</Text>
+                                    <TouchableOpacity
+                                        style={[styles.btn, styles.btnPrimary, { marginLeft: 12 }]}
+                                        onPress={saveChanges}
+                                        disabled={saving}
+                                    >
+                                        {saving ? (
+                                            <ActivityIndicator size="small" color="#fff" />
+                                        ) : (
+                                            <Text style={styles.btnPrimaryText}>Save Changes</Text>
+                                        )}
                                     </TouchableOpacity>
                                 </>
                             ) : (
                                 <>
-                                    <TouchableOpacity style={[styles.btn, { backgroundColor: '#fff' }]} onPress={() => setEditing(true)}>
-                                        <Text style={{ color: '#333', fontWeight: '700' }}>Edit</Text>
+                                    <TouchableOpacity
+                                        style={[styles.btn, styles.btnSecondary]}
+                                        onPress={() => setEditing(true)}
+                                    >
+                                        <Text style={styles.btnSecondaryText}>Edit</Text>
                                     </TouchableOpacity>
 
-                                    <TouchableOpacity style={[styles.btnDanger]} onPress={cancelBooking} disabled={saving}>
-                                        <Text style={{ color: '#fff', fontWeight: '700' }}>{saving ? 'Working…' : 'Cancel booking'}</Text>
+                                    <TouchableOpacity
+                                        style={[styles.btn, styles.btnDanger, { marginLeft: 12 }]}
+                                        onPress={cancelBooking}
+                                        disabled={saving}
+                                    >
+                                        {saving ? (
+                                            <ActivityIndicator size="small" color="#fff" />
+                                        ) : (
+                                            <Text style={styles.btnDangerText}>Cancel Booking</Text>
+                                        )}
                                     </TouchableOpacity>
                                 </>
                             )
                         ) : (
-                            <TouchableOpacity style={[styles.btn, { alignSelf: 'flex-end' }]} onPress={() => router.back()}>
-                                <Text style={{ color: '#333', fontWeight: '700' }}>Close</Text>
+                            <TouchableOpacity
+                                style={[styles.btn, styles.btnSecondary]}
+                                onPress={() => router.back()}
+                            >
+                                <Text style={styles.btnSecondaryText}>Close</Text>
                             </TouchableOpacity>
                         )}
                     </View>
-
-                    {/* REVIEW SECTION - only if appointment completed and owner */}
-                    {statusLower === 'completed' && isOwner && (
-                        <View style={{ marginTop: 22 }}>
-                            <Text style={[styles.smallLabel, { marginBottom: 8 }]}>Leave a review</Text>
-
-                            {hasReviewed ? (
-                                <View style={{ padding: 12, backgroundColor: '#f6f6f6', borderRadius: 10 }}>
-                                    <Text style={{ fontWeight: '700', marginBottom: 6 }}>You already reviewed this provider</Text>
-                                    <Text style={{ color: '#666' }}>Thanks for sharing your feedback.</Text>
-                                </View>
-                            ) : (
-                                <View>
-                                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-                                        <Text style={{ marginRight: 8, color: '#666' }}>Your rating:</Text>
-                                        { [1,2,3,4,5].map((i) => (
-                                            <TouchableOpacity key={i} onPress={() => setReviewRating(i)} style={{ marginRight: 6 }}>
-                                                <Ionicons name={ i <= reviewRating ? 'star' : 'star-outline' } size={28} color="#f1c40f" />
-                                            </TouchableOpacity>
-                                        )) }
-                                    </View>
-
-                                    <TextInput
-                                        placeholder="Write a short review..."
-                                        value={reviewComment}
-                                        onChangeText={setReviewComment}
-                                        style={[styles.notesInput, { minHeight: 80 }]}
-                                        multiline
-                                    />
-
-                                    <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 10 }}>
-                                        <TouchableOpacity
-                                            style={[styles.btnPrimary, { minWidth: 120 }]}
-                                            onPress={submitReview}
-                                            disabled={postingReview}
-                                        >
-                                            <Text style={{ color: '#fff', fontWeight: '700' }}>{postingReview ? 'Posting…' : 'Post review'}</Text>
-                                        </TouchableOpacity>
-                                    </View>
-                                </View>
-                            )}
-                        </View>
-                    )}
                 </View>
+
+
+                {/* REVIEW SECTION - only if appointment completed and owner */}
+                {statusLower === 'completed' && isOwner && (
+                    <View style={[styles.card, { marginTop: 16 }]}>
+                        <Text style={styles.sectionTitle}>Leave a Review</Text>
+
+                        {hasReviewed ? (
+                            <View style={styles.reviewCompleted}>
+                                <Ionicons name="checkmark-circle" size={48} color="#4CAF50" />
+                                <Text style={styles.reviewCompletedTitle}>Review Submitted</Text>
+                                <Text style={styles.reviewCompletedText}>Thank you for sharing your feedback!</Text>
+                            </View>
+                        ) : (
+                            <View>
+                                <View style={styles.ratingSection}>
+                                    <Text style={styles.ratingLabel}>Your rating</Text>
+                                    <View style={styles.starsContainer}>
+                                        {[1, 2, 3, 4, 5].map((i) => (
+                                            <TouchableOpacity
+                                                key={i}
+                                                onPress={() => setReviewRating(i)}
+                                                style={styles.starButton}
+                                            >
+                                                <Ionicons
+                                                    name={i <= reviewRating ? 'star' : 'star-outline'}
+                                                    size={32}
+                                                    color="#f1c40f"
+                                                />
+                                            </TouchableOpacity>
+                                        ))}
+                                    </View>
+                                    <Text style={styles.ratingValue}>{reviewRating}.0 out of 5</Text>
+                                </View>
+
+                                <TextInput
+                                    placeholder="Share your experience with this provider..."
+                                    value={reviewComment}
+                                    onChangeText={setReviewComment}
+                                    style={[styles.notesInput, { minHeight: 100 }]}
+                                    multiline
+                                    placeholderTextColor="#999"
+                                />
+
+                                <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 16 }}>
+                                    <TouchableOpacity
+                                        style={[styles.btn, styles.btnPrimary, { minWidth: 140 }]}
+                                        onPress={submitReview}
+                                        disabled={postingReview}
+                                    >
+                                        {postingReview ? (
+                                            <ActivityIndicator size="small" color="#fff" />
+                                        ) : (
+                                            <Text style={styles.btnPrimaryText}>Post Review</Text>
+                                        )}
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
+                        )}
+                    </View>
+                )}
             </ScrollView>
         </View>
     );
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#fff' },
+    container: { flex: 1, backgroundColor: '#f8f9fa' },
     header: {
         backgroundColor: '#b58dde',
         flexDirection: 'row',
@@ -647,74 +822,162 @@ const styles = StyleSheet.create({
     scroll: { padding: 16, paddingBottom: 60 },
     card: {
         backgroundColor: '#fff',
-        borderRadius: 12,
-        padding: 16,
+        borderRadius: 16,
+        padding: 20,
         shadowColor: '#000',
-        shadowOpacity: 0.04,
-        shadowRadius: 6,
-        elevation: 2,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+        elevation: 4,
     },
-    title: { fontSize: 20, fontWeight: '700', color: '#333' },
-    smallLabel: { fontSize: 12, color: '#666', marginBottom: 6 },
+    title: { fontSize: 24, fontWeight: '700', color: '#333' },
+    sectionTitle: { fontSize: 18, fontWeight: '700', color: '#333', marginBottom: 16 },
+    smallLabel: { fontSize: 12, color: '#666', marginBottom: 6, fontWeight: '600' },
     valueText: { fontSize: 16, color: '#333', fontWeight: '600' },
-    statusBox: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10, alignSelf: 'flex-start' },
+
+    // Status Styles
+    statusBox: {
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 20,
+        alignSelf: 'flex-start',
+    },
     statusPending: { backgroundColor: '#fff3cd' },
     statusOngoing: { backgroundColor: '#d1ecf1' },
     statusCompleted: { backgroundColor: '#d4edda' },
+    statusCancelled: { backgroundColor: '#f8d7da' },
     statusText: { fontSize: 12, fontWeight: '700' },
     statusTextPending: { color: '#856404' },
     statusTextOngoing: { color: '#0c5460' },
     statusTextCompleted: { color: '#155724' },
+    statusTextCancelled: { color: '#721c24' },
 
+    // Input Styles
     inputBtn: {
         backgroundColor: '#fff',
-        borderRadius: 10,
-        padding: 12,
-        borderWidth: 1,
+        borderRadius: 12,
+        padding: 14,
+        borderWidth: 2,
         borderColor: '#F0E7FB',
         alignItems: 'center',
         minWidth: 140,
+        flexDirection: 'row',
+        justifyContent: 'center',
     },
-    inputBtnText: { color: '#333', fontWeight: '700' },
+    inputBtnText: { color: '#333', fontWeight: '700', fontSize: 16 },
 
     notesInput: {
-        backgroundColor: '#fff',
-        borderRadius: 10,
-        padding: 10,
-        borderWidth: 1,
+        backgroundColor: '#f8f9fa',
+        borderRadius: 12,
+        padding: 14,
+        borderWidth: 2,
         borderColor: '#F0E7FB',
         marginTop: 6,
         minHeight: 80,
         textAlignVertical: 'top',
+        fontSize: 16,
+        color: '#333',
     },
 
-    btn: {
-        paddingHorizontal: 14,
-        paddingVertical: 12,
+    // Pricing Section
+    pricingSection: {
+        marginTop: 16,
+        padding: 16,
+        backgroundColor: '#f8f9fa',
         borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#F0E7FB',
+    },
+    pricingRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 8,
+    },
+    pricingLabel: { fontSize: 14, color: '#666', fontWeight: '500' },
+    pricingValue: { fontSize: 14, color: '#333', fontWeight: '600' },
+    totalRow: {
+        borderTopWidth: 1,
+        borderTopColor: '#E8D8F5',
+        paddingTop: 12,
+        marginTop: 4,
+    },
+    totalLabel: { fontSize: 16, color: '#333', fontWeight: '700' },
+    totalValue: { fontSize: 18, color: '#b58dde', fontWeight: '700' },
+
+    // Button Styles
+    btn: {
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        borderRadius: 10,
         alignItems: 'center',
         justifyContent: 'center',
-        minWidth: 140,
-        borderWidth: 1,
-        borderColor: '#ddd',
+        minWidth: 120,
+        flex: 0,
     },
     btnPrimary: {
         backgroundColor: '#b58dde',
-        paddingHorizontal: 14,
-        paddingVertical: 12,
-        borderRadius: 12,
-        alignItems: 'center',
-        justifyContent: 'center',
-        minWidth: 140,
+    },
+    btnSecondary: {
+        backgroundColor: '#fff',
+        borderWidth: 2,
+        borderColor: '#b58dde',
     },
     btnDanger: {
-        backgroundColor: '#d9534f',
-        paddingHorizontal: 14,
-        paddingVertical: 12,
-        borderRadius: 12,
+        backgroundColor: '#dc3545',
+    },
+    btnPrimaryText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+    btnSecondaryText: { color: '#b58dde', fontWeight: '700', fontSize: 14 },
+    btnDangerText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+    // Additional Information
+    infoRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
         alignItems: 'center',
-        justifyContent: 'center',
-        minWidth: 140,
+        paddingVertical: 12,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f0f0f0',
+    },
+    infoLabel: { fontSize: 14, color: '#666', fontWeight: '500' },
+    infoValue: { fontSize: 14, color: '#333', fontWeight: '600', flex: 1, textAlign: 'right', marginLeft: 8 },
+
+    // Review Section
+    reviewCompleted: {
+        alignItems: 'center',
+        padding: 20,
+    },
+    reviewCompletedTitle: {
+        fontSize: 18,
+        fontWeight: '700',
+        color: '#333',
+        marginTop: 12,
+        marginBottom: 4,
+    },
+    reviewCompletedText: {
+        fontSize: 14,
+        color: '#666',
+        textAlign: 'center',
+    },
+    ratingSection: {
+        alignItems: 'center',
+        marginBottom: 20,
+    },
+    ratingLabel: {
+        fontSize: 16,
+        color: '#666',
+        marginBottom: 12,
+        fontWeight: '600',
+    },
+    starsContainer: {
+        flexDirection: 'row',
+        marginBottom: 8,
+    },
+    starButton: {
+        padding: 4,
+    },
+    ratingValue: {
+        fontSize: 16,
+        color: '#333',
+        fontWeight: '700',
     },
 });
-

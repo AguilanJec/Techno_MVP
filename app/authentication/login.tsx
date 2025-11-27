@@ -17,10 +17,10 @@ import {
     signInWithCredential,
 } from "firebase/auth";
 import { FirebaseError } from "firebase/app";
-import { auth } from "../firebaseConfig";
+import { auth } from "../../firebaseConfig";
 // --- ADD THESE IMPORTS ---
 import { getDoc, doc } from "firebase/firestore"; // Import getDoc and doc
-import { db } from "../firebaseConfig"; // Import your db instance
+import { db } from "../../firebaseConfig"; // Import your db instance
 // --- END OF NEW IMPORTS ---
 import * as WebBrowser from "expo-web-browser";
 import * as Google from "expo-auth-session/providers/google";
@@ -149,7 +149,7 @@ export default function LoginScreen() {
                     <Text>← Back</Text>
                 </TouchableOpacity>
                 <Image
-                    source={require("../assets/Hirayag_Logo.png")}
+                    source={require("../../assets/Hirayag_Logo.png")}
                     style={styles.logo}
                     resizeMode="contain"
                 />
@@ -162,16 +162,26 @@ export default function LoginScreen() {
                 <TextInput
                     style={styles.input}
                     placeholder="Email"
+                    placeholderTextColor="#999"
                     value={email}
                     onChangeText={setEmail}
                     autoCapitalize="none"
+                    keyboardType="email-address"
+                    textContentType="emailAddress"
+                    selectionColor="#000"
+                    autoCorrect={false}
                 />
+
                 <TextInput
                     style={styles.input}
                     placeholder="Password"
+                    placeholderTextColor="#999"
                     secureTextEntry
                     value={password}
                     onChangeText={setPassword}
+                    textContentType="password"
+                    selectionColor="#000" // cursor color
+                    autoCorrect={false}
                 />
 
                 <TouchableOpacity style={styles.loginButton} onPress={handleLogin}>
@@ -183,7 +193,7 @@ export default function LoginScreen() {
                 <View style={styles.socialRow}>
                     <TouchableOpacity style={styles.socialButton} onPress={() => promptAsync()}>
                         <Image
-                            source={require("../assets/Google_Logo.png")}
+                            source={require("../../assets/Google_Logo.png")}
                             style={styles.socialIcon}
                         />
                     </TouchableOpacity>
@@ -220,6 +230,8 @@ const styles = StyleSheet.create({
         borderRadius: 10,
         padding: 12,
         marginVertical: 8,
+        backgroundColor: "#fff",
+        color: "#000",
     },
     loginButton: {
         backgroundColor: "#BFA2E0",

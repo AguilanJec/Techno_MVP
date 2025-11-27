@@ -76,7 +76,7 @@ const MyBookingsListScreen: React.FC = () => {
             if (existingConversation) {
                 // Use param names expected by ChatScreen
                 router.push(
-                    `/chat?conversationId=${existingConversation.id}&otherUserName=${encodeURIComponent(
+                    `/user/chat?conversationId=${existingConversation.id}&otherUserName=${encodeURIComponent(
                         providerName
                     )}&otherUserId=${encodeURIComponent(providerId)}&userType=provider`
                 );
@@ -93,7 +93,7 @@ const MyBookingsListScreen: React.FC = () => {
                 const docRef = await addDoc(collection(db, 'conversations'), newConversation);
 
                 router.push(
-                    `/chat?conversationId=${docRef.id}&otherUserName=${encodeURIComponent(
+                    `/user/chat?conversationId=${docRef.id}&otherUserName=${encodeURIComponent(
                         providerName
                     )}&otherUserId=${encodeURIComponent(providerId)}&userType=provider`
                 );
@@ -374,10 +374,6 @@ const MyBookingsListScreen: React.FC = () => {
                             <View style={styles.middleSection}>
                                 <Text style={styles.name}>{b.name}</Text>
                                 <View style={styles.row}>
-                                    <Ionicons name="location-outline" size={14} color="#777" />
-                                    <Text style={styles.mutedText}>{b.distance}</Text>
-                                </View>
-                                <View style={styles.row}>
                                     <Ionicons name="star" size={14} color="#f1c40f" />
                                     <Text style={styles.mutedText}>
                                         {b.rating} | {b.reviews} reviews
@@ -415,7 +411,7 @@ const MyBookingsListScreen: React.FC = () => {
                                                 startConversation(b.providerId, b.name);
                                             } else {
                                                 // Fallback if no providerId
-                                                router.push('/message');
+                                                router.push('/user/message');
                                             }
                                         }}
                                         onPressIn={(e) => e.stopPropagation()} // prevent parent card press
@@ -454,7 +450,7 @@ const MyBookingsListScreen: React.FC = () => {
                 <TouchableOpacity onPress={() => router.push('/user/search')}>
                     <Ionicons name="search-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => router.push('/message')}>
+                <TouchableOpacity onPress={() => router.push('/user/message')}>
                     <Ionicons name="chatbubble-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => router.push('/user/account')}>

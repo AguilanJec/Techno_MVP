@@ -21,7 +21,7 @@ import {
     getDoc,
     doc as firestoreDoc,
 } from "firebase/firestore";
-import { db } from "../firebaseConfig";
+import { db } from "../../firebaseConfig";
 import { getAuth, onAuthStateChanged } from "firebase/auth";
 
 interface Conversation {
@@ -242,7 +242,7 @@ export default function MessageScreen() {
                 onPress={() => {
                     if (otherUserId) {
                         router.push({
-                            pathname: "/chat",
+                            pathname: "/user/chat",
                             params: {
                                 conversationId: item.id,
                                 otherUserName: otherUserName,
@@ -348,7 +348,7 @@ export default function MessageScreen() {
                 <TouchableOpacity onPress={() => router.push("/user/search")}>
                     <Ionicons name="search-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => router.push("/message")}>
+                <TouchableOpacity onPress={() => router.push("/user/message")}>
                     <Ionicons name="chatbubble-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => router.push("/user/account")}>

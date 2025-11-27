@@ -1,3 +1,4 @@
+// app/LocationPage.tsx
 import React, { useEffect, useRef, useState } from "react";
 import {
     View,
@@ -13,6 +14,7 @@ import {
 } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import * as Location from "expo-location";
+// @ts-ignore
 import MapView, { Marker, MapPressEvent, MarkerDragEndEvent } from "react-native-maps";
 
 export default function LocationPage() {
@@ -33,7 +35,6 @@ export default function LocationPage() {
     const [loading, setLoading] = useState(true);
     const [searchLoading, setSearchLoading] = useState(false);
     const [showManualInput, setShowManualInput] = useState(false);
-    const [manualAddress, setManualAddress] = useState("");
 
     // Manual address fields
     const [houseNumber, setHouseNumber] = useState("");
@@ -184,7 +185,7 @@ export default function LocationPage() {
 
     // Build manual address from form fields
     const buildManualAddress = () => {
-        const parts = [];
+        const parts: string[] = [];
         if (houseNumber) parts.push(houseNumber);
         if (street) parts.push(street);
         if (barangay) parts.push(`Brgy. ${barangay}`);
@@ -336,7 +337,9 @@ export default function LocationPage() {
                         value={locationText}
                         onChangeText={setLocationText}
                         placeholder="Search or enter location"
+                        placeholderTextColor="#666"
                         style={styles.input}
+                        selectionColor="#000"
                     />
                     <TouchableOpacity
                         onPress={() => geocodeAddress(locationText)}
@@ -381,7 +384,9 @@ export default function LocationPage() {
                                             value={houseNumber}
                                             onChangeText={setHouseNumber}
                                             placeholder="e.g., 123"
+                                            placeholderTextColor="#666"
                                             style={styles.formInput}
+                                            selectionColor="#000"
                                         />
                                     </View>
                                     <View style={styles.formGroup}>
@@ -390,7 +395,9 @@ export default function LocationPage() {
                                             value={street}
                                             onChangeText={setStreet}
                                             placeholder="e.g., Main Street"
+                                            placeholderTextColor="#666"
                                             style={styles.formInput}
+                                            selectionColor="#000"
                                         />
                                     </View>
                                 </View>
@@ -401,8 +408,10 @@ export default function LocationPage() {
                                         <TextInput
                                             value={barangay}
                                             onChangeText={setBarangay}
-                                            placeholder="e.g., Session Road"
+                                            placeholder="e.g., Camp 7"
+                                            placeholderTextColor="#666"
                                             style={styles.formInput}
+                                            selectionColor="#000"
                                         />
                                     </View>
                                     <View style={styles.formGroup}>
@@ -411,7 +420,9 @@ export default function LocationPage() {
                                             value={municipality}
                                             onChangeText={setMunicipality}
                                             placeholder="e.g., La Trinidad"
+                                            placeholderTextColor="#666"
                                             style={styles.formInput}
+                                            selectionColor="#000"
                                         />
                                     </View>
                                 </View>
@@ -423,7 +434,9 @@ export default function LocationPage() {
                                             value={city}
                                             onChangeText={setCity}
                                             placeholder="e.g., Baguio City"
+                                            placeholderTextColor="#666"
                                             style={styles.formInput}
+                                            selectionColor="#000"
                                         />
                                     </View>
                                     <View style={styles.formGroup}>
@@ -432,7 +445,9 @@ export default function LocationPage() {
                                             value={province}
                                             onChangeText={setProvince}
                                             placeholder="e.g., Benguet"
+                                            placeholderTextColor="#666"
                                             style={styles.formInput}
+                                            selectionColor="#000"
                                         />
                                     </View>
                                 </View>
@@ -444,8 +459,10 @@ export default function LocationPage() {
                                             value={zipCode}
                                             onChangeText={setZipCode}
                                             placeholder="e.g., 2600"
+                                            placeholderTextColor="#666"
                                             style={styles.formInput}
                                             keyboardType="numeric"
+                                            selectionColor="#000"
                                         />
                                     </View>
                                 </View>
@@ -547,6 +564,7 @@ const styles = StyleSheet.create({
         borderRadius: 12,
         marginBottom: 12,
         alignItems: "center",
+        justifyContent: "center", // ensure vertical centering + consistent spacing
         elevation: 2,
         shadowColor: "#000",
         shadowOffset: { width: 0, height: 1 },
@@ -609,14 +627,17 @@ const styles = StyleSheet.create({
     input: {
         flex: 1,
         height: 45,
-        fontSize: 16
+        fontSize: 16,
+        color: "#000", // ensure typed text is black
     },
     searchButton: {
         marginLeft: 8,
         backgroundColor: "#BFA2E0",
         paddingVertical: 10,
         paddingHorizontal: 12,
-        borderRadius: 10
+        borderRadius: 10,
+        justifyContent: "center",
+        alignItems: "center",
     },
     searchText: {
         color: "#fff",
@@ -641,6 +662,8 @@ const styles = StyleSheet.create({
         paddingHorizontal: 40,
         borderRadius: 25,
         marginBottom: 20, // Added margin for better spacing when scrolling
+        justifyContent: "center",
+        alignItems: "center",
     },
     nextText: {
         color: "#fff",
@@ -713,6 +736,7 @@ const styles = StyleSheet.create({
         padding: 10,
         fontSize: 14,
         backgroundColor: "#f9f9f9",
+        color: "#000", // ensure typed text is black in modal inputs
     },
     addressPreview: {
         backgroundColor: "#F6EEFF",
@@ -733,16 +757,17 @@ const styles = StyleSheet.create({
         fontWeight: "500",
     },
     modalButtons: {
-        flexDirection: "row",
-        justifyContent: "space-between",
+        flexDirection: "column",
+        alignItems: "center",
         marginTop: 15,
     },
     modalButton: {
-        flex: 1,
+        width: "80%",
+        marginVertical: 5,
         paddingVertical: 12,
         borderRadius: 10,
         alignItems: "center",
-        marginHorizontal: 4,
+        justifyContent: "center",
     },
     resetButton: {
         backgroundColor: "#FFE4E4",

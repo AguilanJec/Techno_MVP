@@ -222,7 +222,7 @@ export default function ServiceBookingDetails() {
             Alert.alert("No chat target", "Parent user id not available to message.");
             return;
         }
-        router.push(`/chat?uid=${uid}`);
+        router.push(`/user/chat?uid=${uid}`);
     };
 
     if (loading) {

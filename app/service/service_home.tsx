@@ -13,7 +13,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { db, auth } from "../../firebaseConfig"; // <-- adjust path if needed
+import { db, auth } from "../../firebaseConfig";
 
 // Firestore imports (modular)
 import {
@@ -29,7 +29,6 @@ import { onAuthStateChanged, User } from "firebase/auth";
 
 const { width: screenWidth } = Dimensions.get("window");
 
-// Types (kept permissive to match your Firestore shapes)
 interface Booking {
     id: string;
     parentName: string;
@@ -57,14 +56,10 @@ export default function ServiceHome() {
     const [loading, setLoading] = useState(true);
     const [user, setUser] = useState<User | null>(null);
 
-    // provider data & picture (for header)
     const [providerData, setProviderData] = useState<any>(null);
     const [providerPictureUri, setProviderPictureUri] = useState<string | null>(null);
-
-    // userCache holds fetched user documents to avoid repeated reads
     const [userCache, setUserCache] = useState<Record<string, { name?: string; picture?: string }>>({});
 
-    // Listen for auth state to get current provider UID
     useEffect(() => {
         const unsubAuth = onAuthStateChanged(auth, (u) => {
             setUser(u);
@@ -72,37 +67,25 @@ export default function ServiceHome() {
         return () => unsubAuth();
     }, []);
 
-    // sanitize base64 -> data uri
     const getSanitizedPictureUri = (raw?: string) => {
         if (!raw) return null;
 
         let trimmed = raw.trim();
-
-        // Remove `url(...)` wrapper if present
         const urlMatch = trimmed.match(/^url\(["']?(.*?)["']?\)$/i);
         if (urlMatch) {
             trimmed = urlMatch[1];
         }
 
-        // Too short to be valid image
         if (trimmed.length < 20) return null;
-
-        // Already proper data URI
         if (/^data:image\/[a-zA-Z]+;base64,/.test(trimmed)) {
             return trimmed;
         }
-
-        // Remote URL
         if (/^https?:\/\//.test(trimmed)) return trimmed;
-
-        // Otherwise assume raw base64, default to jpeg
         return `data:image/jpeg;base64,${trimmed}`;
     };
 
-    // fetch single user doc and cache it
     const fetchAndCacheUser = async (userId: string) => {
         if (!userId) return;
-        // don't refetch if cached
         if (userCache[userId]) return;
 
         try {
@@ -112,22 +95,17 @@ export default function ServiceHome() {
                 const name = d?.name || d?.email || "Parent";
                 const picture = typeof d?.picture === "string" ? d.picture : undefined;
                 setUserCache((prev) => ({ ...prev, [userId]: { name, picture } }));
-                console.log(`[fetchAndCacheUser] cached ${userId}: name=${name}, pictureLen=${picture ? picture.length : "none"}`);
-                // update bookings with newly fetched name if present
                 setBookings((prev) =>
                     prev.map((b) => (b.userId === userId ? { ...b, parentName: name } : b))
                 );
             } else {
-                // no user doc found
                 setUserCache((prev) => ({ ...prev, [userId]: { name: undefined, picture: undefined } }));
-                console.log(`[fetchAndCacheUser] no user doc for ${userId}`);
             }
         } catch (err) {
             console.error("fetchAndCacheUser error:", err);
         }
     };
 
-    // When user changes, load provider and appointments
     useEffect(() => {
         if (!user) {
             setProviderName(null);
@@ -145,7 +123,7 @@ export default function ServiceHome() {
         async function loadProviderAndListenAppointments() {
             setLoading(true);
             try {
-                // === Load provider document ===
+                // Load provider document
                 const providerRef = doc(db, "providers", user.uid);
                 const providerSnap = await getDoc(providerRef);
 
@@ -168,7 +146,6 @@ export default function ServiceHome() {
                         avgRating = "—";
                     }
 
-                    // store provider data & picture URI for header
                     setProviderData(data);
                     const pUri = getSanitizedPictureUri(data?.picture);
                     setProviderPictureUri(pUri);
@@ -180,7 +157,7 @@ export default function ServiceHome() {
 
                 setProviderName(name);
 
-                // === Listen to appointments where providerId == current UID ===
+                // Listen to appointments
                 const appointmentsCol = collection(db, "appointments");
                 const q = query(appointmentsCol, where("providerId", "==", user.uid));
                 unsubAppointments = onSnapshot(
@@ -192,15 +169,12 @@ export default function ServiceHome() {
 
                         querySnap.forEach((docSnap) => {
                             const data = docSnap.data();
-                            // NOTE: original code filtered out completed/cancelled; keep that behavior
                             const statusLower = typeof data?.status === "string" ? data.status.toLowerCase() : "";
                             if (statusLower === "completed" || statusLower === "cancelled") {
                                 return;
                             }
 
-                            // Build sensible display fields from the sample shape you supplied
                             const rawUserId = data?.userId || null;
-                            // parentName fallback: try userEmail first, then userId then "Parent"
                             const fallbackParentName = data?.userEmail || rawUserId || "Parent";
 
                             let dateLabel = data?.schedule?.name || data?.date || "";
@@ -250,7 +224,6 @@ export default function ServiceHome() {
                             docs.push(booking);
                         });
 
-                        // Sort upcoming by createdAt or some timestamp (descending newest first)
                         docs.sort((a, b) => {
                             const aT = a.raw?.createdAt?.toMillis ? a.raw.createdAt.toMillis() : 0;
                             const bT = b.raw?.createdAt?.toMillis ? b.raw.createdAt.toMillis() : 0;
@@ -258,11 +231,8 @@ export default function ServiceHome() {
                         });
 
                         setBookings(docs);
-
-                        // fetch missing users (cache) asynchronously
                         missingUserIds.forEach((uid) => fetchAndCacheUser(uid));
 
-                        // === Build stats: Total Bookings & Avg Rating & Upcoming Bookings ===
                         const totalBookings = docs.length.toString();
                         const upcomingCount = docs.length.toString();
                         const statsArr: StatCard[] = [
@@ -308,7 +278,7 @@ export default function ServiceHome() {
             cancelled = true;
             if (unsubAppointments) unsubAppointments();
         };
-    }, [user, userCache]); // include userCache only to ensure fetch logic sees changes (fetchAndCacheUser guards duplicate fetches)
+    }, [user, userCache]);
 
     const renderStatCard = ({ item }: { item: StatCard }) => (
         <TouchableOpacity style={[styles.statCard, { backgroundColor: item.color }]}>
@@ -326,10 +296,26 @@ export default function ServiceHome() {
         if (statusLower === "pending") statusColor = "#f39c12";
         if (statusLower === "completed") statusColor = "#27ae60";
 
-        // prefer cached user name if available
         const cached = item.userId ? userCache[item.userId] : undefined;
         const displayName = cached?.name || item.parentName || "Parent";
         const pictureUri = getSanitizedPictureUri(cached?.picture);
+
+        // FIXED: Properly pass parameters to chat screen
+        const handleMessagePress = () => {
+            if (!item.userId) {
+                console.log("No userId available for this booking");
+                return;
+            }
+
+            router.push({
+                pathname: "/user/chat",
+                params: {
+                    otherUserId: item.userId,
+                    otherUserName: displayName,
+                    userType: "user" // Since provider is messaging a user
+                }
+            });
+        };
 
         return (
             <TouchableOpacity
@@ -360,7 +346,8 @@ export default function ServiceHome() {
                     </View>
                 </View>
                 <View style={styles.bookingFooter}>
-                    <TouchableOpacity style={styles.actionButton} onPress={() => router.push(`/chat?uid=${item.raw?.userId || ""}`)}>
+                    {/* FIXED: Use the corrected handleMessagePress */}
+                    <TouchableOpacity style={styles.actionButton} onPress={handleMessagePress}>
                         <Ionicons name="chatbubble-outline" size={18} color="#8e44ad" />
                         <Text style={styles.actionButtonText}>Message</Text>
                     </TouchableOpacity>
@@ -373,7 +360,6 @@ export default function ServiceHome() {
         );
     };
 
-    // Loading skeleton
     if (loading) {
         return (
             <View style={[styles.container, { justifyContent: "center", alignItems: "center" }]}>
@@ -473,7 +459,6 @@ export default function ServiceHome() {
     );
 }
 
-
 const styles = StyleSheet.create({
     container: {
         flex: 1,
@@ -502,7 +487,6 @@ const styles = StyleSheet.create({
     profileIcon: {
         marginLeft: 10,
     },
-    // header profile image for top-right (small)
     headerProfileImage: {
         width: 40,
         height: 40,

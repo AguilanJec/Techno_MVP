@@ -97,7 +97,7 @@ export default function ServiceAccountScreen() {
     const handleLogout = async () => {
         try {
             await signOut(auth);
-            router.push("/login");
+            router.push("/authentication/login");
         } catch (error) {
             console.error("Error signing out:", error);
             Alert.alert("Error", "Failed to log out. Please try again.");
@@ -197,7 +197,7 @@ export default function ServiceAccountScreen() {
                     <Text style={styles.sectionTitle}>Support</Text>
                     <TouchableOpacity
                         style={styles.item}
-                        onPress={() => router.push("/feedback")}
+                        onPress={() => router.push("/user/feedback")}
                     >
                         <Text style={styles.itemText}>Help centre</Text>
                         <Ionicons name="chevron-forward" size={18} color="#777" />

@@ -132,7 +132,7 @@ export default function ChatbotScreen() {
     const renderItem = ({ item }: { item: Message }) => (
         <View style={[styles.messageRow, item.isUser ? styles.userRow : styles.botRow]}>
             {!item.isUser && (
-                <Image source={require("../assets/images/chat-bot.png")} style={styles.avatar} />
+                <Image source={require("../../assets/images/chat-bot.png")} style={styles.avatar} />
             )}
             <View style={[styles.bubble, item.isUser ? styles.userBubble : styles.botBubble]}>
                 <Text style={[styles.messageText, item.isUser ? styles.userText : styles.botText]}>
@@ -154,7 +154,7 @@ export default function ChatbotScreen() {
                     <Ionicons name="chevron-back" size={28} color="white" />
                 </TouchableOpacity>
                 <View style={styles.headerTitle}>
-                    <Image source={require("../assets/images/chat-bot.png")} style={styles.headerAvatar} />
+                    <Image source={require("../../assets/images/chat-bot.png")} style={styles.headerAvatar} />
                     <Text style={styles.headerText}>M.A.V.I</Text>
                 </View>
                 <View style={{ width: 50 }} />
@@ -173,7 +173,7 @@ export default function ChatbotScreen() {
             {/* Typing Indicator */}
             {isTyping && (
                 <View style={[styles.messageRow, styles.botRow]}>
-                    <Image source={require("../assets/images/chat-bot.png")} style={styles.avatar} />
+                    <Image source={require("../../assets/images/chat-bot.png")} style={styles.avatar} />
                     <View style={[styles.bubble, styles.botBubble]}>
                         <ActivityIndicator size="small" color="#999" />
                         <Text style={{ marginLeft: 8, color: "#999" }}>Mavi is typing...</Text>
@@ -231,7 +231,7 @@ export default function ChatbotScreen() {
                 <TouchableOpacity onPress={() => router.push("/user/search")}>
                     <Ionicons name="search-outline" size={26} color="#8e44ad" />
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => router.push("/message")}>
+                <TouchableOpacity onPress={() => router.push("/user/message")}>
                     <Ionicons name="chatbubble-outline" size={30} color="#8e44ad" />
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => router.push("/user/account")}>

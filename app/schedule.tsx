@@ -46,7 +46,7 @@ const MyBookingsScreen: React.FC = () => {
                     <Ionicons name="search-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
 
-                <TouchableOpacity onPress={() => router.push("/message")}>
+                <TouchableOpacity onPress={() => router.push("/user/message")}>
                     <Ionicons name="chatbubble-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
 

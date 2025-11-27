@@ -10,6 +10,7 @@ import {
     Alert,
     Image,
     Platform,
+    ActivityIndicator,
 } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { createUserWithEmailAndPassword, fetchSignInMethodsForEmail } from "firebase/auth";
@@ -19,15 +20,12 @@ import * as Location from "expo-location";
 import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
 
-
-// Define the type for a single day's availability
+// Types for availability
 type DayAvailability = {
     enabled: boolean;
-    from: string; // Format: "HH:MM"
-    to: string;   // Format: "HH:MM"
+    from: string;
+    to: string;
 };
-
-// Define the type for the entire availability state object
 type AvailabilityState = {
     Monday: DayAvailability;
     Tuesday: DayAvailability;
@@ -48,24 +46,17 @@ export default function EditAddressProvider() {
     const locationParam = getParamString(params.userLocation ?? params.address ?? params.location);
     const latParam = getParamString(params.latitude);
     const lngParam = getParamString(params.longitude);
+
+    // Form state
     const [profilePhoto, setProfilePhoto] = useState<string | null>(null);
-
-
-    // Form fields
     const [name, setName] = useState("");
     const [phone, setPhone] = useState("");
     const [addressDetails, setAddressDetails] = useState("");
     const [addressDisplay, setAddressDisplay] = useState(locationParam || "No location selected");
     const [bio, setBio] = useState("");
-
-    // Skills manager
     const [skills, setSkills] = useState<string[]>([]);
     const [newSkill, setNewSkill] = useState("");
-
-    // User rate (₱/hr)
     const [userRate, setUserRate] = useState("");
-
-    // Availability state with proper type
     const [availability, setAvailability] = useState<AvailabilityState>({
         Monday: { enabled: false, from: "08:00", to: "20:00" },
         Tuesday: { enabled: false, from: "08:00", to: "20:00" },
@@ -76,25 +67,23 @@ export default function EditAddressProvider() {
         Sunday: { enabled: false, from: "08:00", to: "20:00" },
     });
 
-    const addSkill = () => {
-        if (!newSkill.trim()) {
-            Alert.alert("Error", "Please enter a skill");
-            return;
-        }
-        setSkills(prev => [...prev, newSkill.trim()]);
-        setNewSkill("");
-    };
-
-    const removeSkill = (index: number) => {
-        setSkills(prev => prev.filter((_, i) => i !== index));
-    };
-
-    // Map coords state
+    // Map coords
     const DEFAULT = { latitude: 16.4023, longitude: 120.5960 };
     const [mapCoords, setMapCoords] = useState<{ latitude: number; longitude: number }>(DEFAULT);
     const [mapReady, setMapReady] = useState(false);
     const [loadingCoords, setLoadingCoords] = useState(true);
 
+    // Loading & errors
+    const [loading, setLoading] = useState(false);
+    const [nameError, setNameError] = useState("");
+    const [phoneError, setPhoneError] = useState("");
+    const [addressError, setAddressError] = useState("");
+    const [profilePhotoError, setProfilePhotoError] = useState("");
+    const [skillsError, setSkillsError] = useState("");
+    const [rateError, setRateError] = useState("");
+    const [availabilityError, setAvailabilityError] = useState("");
+
+    // react-native-maps lazy require
     let MapView: any = null;
     let Marker: any = null;
     if (Platform.OS !== "web") {
@@ -110,6 +99,7 @@ export default function EditAddressProvider() {
     useEffect(() => {
         (async () => {
             try {
+                // If lat/lng provided, use them
                 if (latParam && lngParam) {
                     const lat = parseFloat(latParam);
                     const lng = parseFloat(lngParam);
@@ -122,6 +112,7 @@ export default function EditAddressProvider() {
                     }
                 }
 
+                // If textual address provided, geocode it
                 if (locationParam) {
                     const results = await Location.geocodeAsync(locationParam);
                     if (results && results.length > 0) {
@@ -140,6 +131,7 @@ export default function EditAddressProvider() {
                     }
                 }
 
+                // fallback to device location
                 try {
                     const { status } = await Location.requestForegroundPermissionsAsync();
                     if (status === "granted") {
@@ -165,69 +157,58 @@ export default function EditAddressProvider() {
         })();
     }, []);
 
-    const handleSave = async () => {
+    // Skills helpers
+    const addSkill = () => {
+        if (!newSkill.trim()) {
+            Alert.alert("Error", "Please enter a skill");
+            return;
+        }
+        setSkills(prev => [...prev, newSkill.trim()]);
+        setNewSkill("");
+    };
+    const removeSkill = (index: number) => setSkills(prev => prev.filter((_, i) => i !== index));
+
+    // Image picker
+    const pickProfilePhoto = async () => {
         try {
-            const emailString = String(emailParam || "");
-            const passwordString = String(passwordParam || "");
-            const roleParam = Array.isArray(params.role) ? params.role[0] : params.role ?? "";
-
-            if (!emailString || !passwordString) {
-                Alert.alert("Error", "Missing email or password");
+            const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+            if (!permission.granted) {
+                Alert.alert("Permission required", "We need access to your photos.");
                 return;
             }
-
-            const existingMethods = await fetchSignInMethodsForEmail(auth, emailString);
-            if (existingMethods.length > 0) {
-                Alert.alert("Error", "Email already exists.");
-                return;
-            }
-
-            const userCredential = await createUserWithEmailAndPassword(auth, emailString, passwordString);
-            const user = userCredential.user;
-
-            // Save to "providers" collection instead of "users"
-            await setDoc(doc(db, "providers", user.uid), {
-                name,
-                phone,
-                email: emailString,
-                address: addressDisplay,
-                addressDetails,
-                latitude: mapCoords.latitude,
-                longitude: mapCoords.longitude,
-                skills: skills,
-                rate: userRate,
-                role: roleParam,
-                bio: bio,
-                picture: profilePhoto || null,
-                availability, // <-- Save the availability
-                createdAt: new Date(),
+            const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                allowsEditing: true,
+                quality: 1,
             });
-
-            Alert.alert("Success", "Provider account created successfully!");
-            router.replace("/login");
-        } catch (error: any) {
-            console.error("Registration error:", error);
-            Alert.alert("Error", error?.message || "Registration failed");
+            if (result.canceled) return;
+            const picked = result.assets[0];
+            const manipulated = await ImageManipulator.manipulateAsync(
+                picked.uri,
+                [{ resize: { width: 256, height: 256 } }],
+                { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+            );
+            const base64Img = `data:image/jpeg;base64,${manipulated.base64}`;
+            setProfilePhoto(base64Img);
+            setProfilePhotoError("");
+        } catch (err) {
+            console.log("Image picker error:", err);
+            Alert.alert("Image Error", "Could not pick image. Try again.");
         }
     };
 
-    // Component for each day's availability row - with proper types
+    // Availability row component
     const AvailabilityRow: React.FC<{
-        day: keyof AvailabilityState; // 'day' must be a key of AvailabilityState (e.g., "Monday", "Tuesday", etc.)
-        value: DayAvailability;       // 'value' is the specific day's availability object
-        onChange: (newVal: DayAvailability) => void; // 'onChange' function expects a DayAvailability object
+        day: keyof AvailabilityState;
+        value: DayAvailability;
+        onChange: (newVal: DayAvailability) => void;
     }> = ({ day, value, onChange }) => {
-        const handleToggle = () => {
-            onChange({ ...value, enabled: !value.enabled });
-        };
-
-        const handleTimeChange = (type: 'from' | 'to', newValue: string) => { // 'type' is specifically 'from' or 'to'
-            // Basic validation for time format (HH:MM)
+        const handleToggle = () => onChange({ ...value, enabled: !value.enabled });
+        const handleTimeChange = (type: "from" | "to", newValue: string) => {
             if (/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/.test(newValue) || newValue === "") {
                 onChange({ ...value, [type]: newValue });
             }
         };
-
         return (
             <View style={styles.availabilityRow}>
                 <Text style={styles.dayLabel}>{day}</Text>
@@ -241,22 +222,141 @@ export default function EditAddressProvider() {
                         <TextInput
                             style={styles.timeInput}
                             value={value.from}
-                            onChangeText={(text) => handleTimeChange("from", text)}
                             placeholder="08:00"
-                            keyboardType="numeric"
+                            placeholderTextColor="#666"
+                            onChangeText={(t) => handleTimeChange("from", t)}
                         />
                         <Text style={styles.toLabel}>To</Text>
                         <TextInput
                             style={styles.timeInput}
                             value={value.to}
-                            onChangeText={(text) => handleTimeChange("to", text)}
                             placeholder="20:00"
-                            keyboardType="numeric"
+                            placeholderTextColor="#666"
+                            onChangeText={(t) => handleTimeChange("to", t)}
                         />
                     </View>
                 )}
             </View>
         );
+    };
+
+    // Validate required fields before save
+    const validateAll = (): boolean => {
+        let ok = true;
+        setNameError("");
+        setPhoneError("");
+        setAddressError("");
+        setProfilePhotoError("");
+        setSkillsError("");
+        setRateError("");
+        setAvailabilityError("");
+
+        if (!name.trim()) {
+            setNameError("Name is required");
+            ok = false;
+        }
+
+        const digits = phone.replace(/\D/g, "");
+        if (!digits || digits.length < 7) {
+            setPhoneError("Enter a valid phone number");
+            ok = false;
+        }
+
+        if (!addressDisplay || addressDisplay.includes("No location selected")) {
+            setAddressError("Please select/confirm your address on the map");
+            ok = false;
+        }
+
+        if (!profilePhoto) {
+            setProfilePhotoError("Please upload a profile photo");
+            ok = false;
+        }
+
+        if (!userRate || isNaN(Number(userRate)) || Number(userRate) <= 0) {
+            setRateError("Please enter a valid hourly rate");
+            ok = false;
+        }
+
+        if (skills.length === 0) {
+            setSkillsError("Add at least one skill");
+            ok = false;
+        }
+
+        const anyAvail = Object.values(availability).some(d => d.enabled);
+        if (!anyAvail) {
+            setAvailabilityError("Enable availability on at least one day");
+            ok = false;
+        }
+
+        return ok;
+    };
+
+    // Save handler with robust loading & error reset
+    const handleSave = async () => {
+        if (loading) return;
+        setLoading(true);
+
+        try {
+            // Validate inputs first (fills inline errors)
+            const ok = validateAll();
+            if (!ok) {
+                Alert.alert("Missing details", "Please fix the highlighted fields before saving.");
+                return;
+            }
+
+            // Ensure email/password param exist
+            const emailString = String(emailParam || "").trim().toLowerCase();
+            const passwordString = String(passwordParam || "");
+            const roleParam = Array.isArray(params.role) ? params.role[0] : params.role ?? "";
+
+            if (!emailString || !passwordString) {
+                Alert.alert("Error", "Email or password missing from previous step.");
+                return;
+            }
+
+            // Check if auth email exists
+            try {
+                const existingMethods = await fetchSignInMethodsForEmail(auth, emailString);
+                if (existingMethods.length > 0) {
+                    Alert.alert("Error", "Email already exists.");
+                    return;
+                }
+            } catch (err) {
+                // If fetchSignInMethods throws, log but continue to attempt createUser (server validation will catch duplicates)
+                console.warn("fetchSignInMethodsForEmail error:", err);
+            }
+
+            // Create Firebase Auth user
+            const userCredential = await createUserWithEmailAndPassword(auth, emailString, passwordString);
+            const user = userCredential.user;
+
+            // Save provider document
+            await setDoc(doc(db, "providers", user.uid), {
+                name: name.trim(),
+                phone: phone.trim(),
+                email: emailString,
+                address: addressDisplay,
+                addressDetails,
+                latitude: mapCoords.latitude,
+                longitude: mapCoords.longitude,
+                skills,
+                rate: userRate,
+                role: roleParam,
+                bio,
+                picture: profilePhoto || null,
+                availability,
+                createdAt: new Date(),
+            });
+
+            Alert.alert("Success", "Provider account created successfully!");
+            router.replace("/authentication/login");
+        } catch (error: any) {
+            console.error("Registration error:", error);
+            const message = error?.message || "Registration failed";
+            Alert.alert("Error", message);
+        } finally {
+            setLoading(false);
+        }
     };
 
     if (loadingCoords) {
@@ -267,48 +367,8 @@ export default function EditAddressProvider() {
         );
     }
 
-
-    const pickProfilePhoto = async () => {
-        try {
-            // Request permissions
-            const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-            if (!permission.granted) {
-                Alert.alert("Permission required", "We need access to your photos.");
-                return;
-            }
-
-            // Pick image
-            const result = await ImagePicker.launchImageLibraryAsync({
-                mediaTypes: ImagePicker.MediaTypeOptions.Images,
-                allowsEditing: true,
-                quality: 1,
-            });
-
-            if (result.canceled) return;
-
-            const picked = result.assets[0];
-
-            // Resize image to 256x256
-            const manipulated = await ImageManipulator.manipulateAsync(
-                picked.uri,
-                [{ resize: { width: 256, height: 256 } }],
-                {
-                    compress: 0.7,     // reduce size
-                    format: ImageManipulator.SaveFormat.JPEG,
-                    base64: true,
-                }
-            );
-
-            const base64Img = `data:image/jpeg;base64,${manipulated.base64}`;
-            setProfilePhoto(base64Img);
-
-        } catch (err) {
-            console.log("Image picker error:", err);
-        }
-    };
-
     return (
-        <ScrollView style={{ flex: 1, backgroundColor: "#EDE0FF" }}>
+        <ScrollView style={{ flex: 1, backgroundColor: "#EDE0FF" }} contentContainerStyle={{ paddingBottom: 40 }}>
             <TouchableOpacity onPress={() => router.push("/authentication/location")} style={styles.backButton}>
                 <Text style={styles.backText}>{"< Back"}</Text>
             </TouchableOpacity>
@@ -316,19 +376,35 @@ export default function EditAddressProvider() {
             <Text style={styles.title}>Address Information</Text>
 
             <Text style={styles.label}>Name *</Text>
-            <TextInput style={styles.input} value={name} onChangeText={setName} />
+            <TextInput
+                style={[styles.input, nameError ? styles.inputError : null]}
+                value={name}
+                onChangeText={(t) => { setName(t); setNameError(""); }}
+                placeholder="Full name"
+                placeholderTextColor="#666"
+            />
+            {nameError ? <Text style={styles.fieldError}>{nameError}</Text> : null}
 
             <Text style={styles.label}>Phone number *</Text>
-            <View style={styles.phoneContainer}>
+            <View style={[styles.phoneContainer, phoneError ? styles.inputError : null]}>
                 <Text style={styles.phonePrefix}>PH +63</Text>
-                <TextInput style={styles.phoneInput} keyboardType="number-pad" value={phone} onChangeText={setPhone} />
+                <TextInput
+                    style={[styles.phoneInput]}
+                    keyboardType="phone-pad"
+                    value={phone}
+                    onChangeText={(t) => { setPhone(t); setPhoneError(""); }}
+                    placeholder="9xxxxxxxx"
+                    placeholderTextColor="#666"
+                />
             </View>
+            {phoneError ? <Text style={styles.fieldError}>{phoneError}</Text> : null}
 
             <Text style={styles.label}>Address *</Text>
-            <TouchableOpacity style={styles.addressPicker}>
+            <TouchableOpacity style={[styles.addressPicker, addressError ? styles.inputError : null]}>
                 <Text style={styles.addressText}>{addressDisplay}</Text>
                 <Text style={styles.small}>{addressDetails || "Tap Save to confirm"}</Text>
             </TouchableOpacity>
+            {addressError ? <Text style={styles.fieldError}>{addressError}</Text> : null}
 
             <Text style={styles.confirmText}>Confirm your map location</Text>
 
@@ -362,6 +438,7 @@ export default function EditAddressProvider() {
                                 if (place) {
                                     const address = `${place.name || ""}${place.street ? ", " + place.street : ""}${place.city ? ", " + place.city : ""}${place.region ? ", " + place.region : ""}${place.country ? ", " + place.country : ""}`;
                                     setAddressDisplay(address);
+                                    setAddressError("");
                                 }
                             } catch {}
                         }}
@@ -377,6 +454,7 @@ export default function EditAddressProvider() {
                                     if (place) {
                                         const address = `${place.name || ""}${place.street ? ", " + place.street : ""}${place.city ? ", " + place.city : ""}${place.region ? ", " + place.region : ""}${place.country ? ", " + place.country : ""}`;
                                         setAddressDisplay(address);
+                                        setAddressError("");
                                     }
                                 } catch {}
                             }}
@@ -394,58 +472,52 @@ export default function EditAddressProvider() {
                 )}
             </View>
 
-            {/* Bio Section */}
             <Text style={styles.label}>Bio</Text>
             <TextInput
                 style={styles.input}
                 placeholder="Tell us about yourself"
+                placeholderTextColor="#666"
                 value={bio}
                 onChangeText={setBio}
             />
 
-            {/* Availability Section */}
             <Text style={styles.label}>Availability</Text>
             {Object.keys(availability).map((dayKey) => {
-                // Type assertion to ensure dayKey is keyof AvailabilityState
                 const day = dayKey as keyof AvailabilityState;
                 return (
                     <AvailabilityRow
                         key={day}
                         day={day}
-                        value={availability[day]} // TypeScript knows 'day' is valid key for 'availability'
-                        onChange={(newVal) => setAvailability(prev => ({ ...prev, [day]: newVal }))}
+                        value={availability[day]}
+                        onChange={(newVal) => {
+                            setAvailability(prev => ({ ...prev, [day]: newVal }));
+                            setAvailabilityError("");
+                        }}
                     />
                 );
             })}
+            {availabilityError ? <Text style={styles.fieldError}>{availabilityError}</Text> : null}
 
             <Text style={styles.label}>Address details</Text>
-            <TextInput style={styles.input} placeholder="Near 7/11" value={addressDetails} onChangeText={setAddressDetails} />
+            <TextInput style={styles.input} placeholder="Near 7/11" placeholderTextColor="#666" value={addressDetails} onChangeText={setAddressDetails} />
 
-            {/* User rate */}
             <Text style={styles.label}>Rate (₱/hr)</Text>
             <TextInput
-                style={styles.input}
+                style={[styles.input, rateError ? styles.inputError : null]}
                 placeholder="Your hourly rate"
                 value={userRate}
                 keyboardType="number-pad"
-                onChangeText={setUserRate}
+                placeholderTextColor="#666"
+                onChangeText={(t) => { setUserRate(t); setRateError(""); }}
             />
+            {rateError ? <Text style={styles.fieldError}>{rateError}</Text> : null}
 
             <Text style={styles.label}>Profile Picture *</Text>
-
-            <TouchableOpacity style={styles.photoPicker} onPress={pickProfilePhoto}>
-                {profilePhoto ? (
-                    <Image
-                        source={{ uri: profilePhoto }}
-                        style={styles.profileImage}
-                    />
-                ) : (
-                    <Text style={styles.photoPlaceholder}>Tap to upload photo</Text>
-                )}
+            <TouchableOpacity style={[styles.photoPicker, profilePhotoError ? styles.inputError : null]} onPress={pickProfilePhoto}>
+                {profilePhoto ? <Image source={{ uri: profilePhoto }} style={styles.profileImage} /> : <Text style={styles.photoPlaceholder}>Tap to upload photo</Text>}
             </TouchableOpacity>
+            {profilePhotoError ? <Text style={styles.fieldError}>{profilePhotoError}</Text> : null}
 
-
-            {/* Skills Section */}
             <Text style={styles.label}>Skills</Text>
             {skills.map((s, index) => (
                 <View key={index} style={styles.skillRow}>
@@ -455,11 +527,13 @@ export default function EditAddressProvider() {
                     </TouchableOpacity>
                 </View>
             ))}
+            {skillsError ? <Text style={styles.fieldError}>{skillsError}</Text> : null}
 
             <View style={styles.skillInputRow}>
                 <TextInput
                     style={[styles.input, { flex: 1 }]}
                     placeholder="Skill (e.g., Babysitting)"
+                    placeholderTextColor="#666"
                     value={newSkill}
                     onChangeText={setNewSkill}
                 />
@@ -470,8 +544,8 @@ export default function EditAddressProvider() {
 
             <Text style={styles.privacy}>By clicking Save, you acknowledge that you have read the Privacy Policy.</Text>
 
-            <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-                <Text style={styles.saveText}>Save</Text>
+            <TouchableOpacity style={[styles.saveButton, loading && styles.saveButtonDisabled]} onPress={handleSave} disabled={loading}>
+                {loading ? <View style={{ flexDirection: "row", alignItems: "center" }}><ActivityIndicator color="#fff" style={{ marginRight: 10 }} /> <Text style={styles.saveText}>Saving...</Text></View> : <Text style={styles.saveText}>Save</Text>}
             </TouchableOpacity>
         </ScrollView>
     );
@@ -483,9 +557,11 @@ const styles = StyleSheet.create({
     backText: { color: "#6A4BBC", fontSize: 16 },
     title: { textAlign: "center", marginTop: 10, fontSize: 24, fontWeight: "bold", color: "#6A0DAD" },
     label: { marginHorizontal: 20, marginTop: 15, fontWeight: "600", fontSize: 16 },
-    input: { backgroundColor: "#F5F5F5", marginHorizontal: 20, borderRadius: 10, padding: 12, fontSize: 16, marginTop: 5 },
+    input: { backgroundColor: "#fff", color: "#000", marginHorizontal: 20, borderRadius: 10, padding: 12, fontSize: 16, marginTop: 5 },
+    inputError: { borderColor: "#FF0000", borderWidth: 2, backgroundColor: "#FFE6E6" },
+    fieldError: { color: "#FF0000", marginLeft: 20, marginTop: 6, fontSize: 13 },
     phoneContainer: {
-        backgroundColor: "#F5F5F5",
+        backgroundColor: "#fff",
         marginHorizontal: 20,
         borderRadius: 10,
         paddingHorizontal: 15,
@@ -495,9 +571,9 @@ const styles = StyleSheet.create({
         height: 45,
     },
     phonePrefix: { marginRight: 10, fontSize: 16, fontWeight: "600" },
-    phoneInput: { flex: 1, fontSize: 16 },
-    addressPicker: { backgroundColor: "#F5F5F5", marginHorizontal: 20, borderRadius: 10, padding: 12, marginTop: 5 },
-    addressText: { fontSize: 17, fontWeight: "600" },
+    phoneInput: { flex: 1, fontSize: 16, color: "#000" },
+    addressPicker: { backgroundColor: "#fff", marginHorizontal: 20, borderRadius: 10, padding: 12, marginTop: 5 },
+    addressText: { fontSize: 17, fontWeight: "600", color: "#000" },
     small: { fontSize: 13, color: "#555" },
     confirmText: { marginTop: 18, marginLeft: 20, fontWeight: "600" },
     mapContainer: { width: "90%", alignSelf: "center", height: 200, borderRadius: 15, overflow: "hidden", marginTop: 10, backgroundColor: "#ddd" },
@@ -505,91 +581,36 @@ const styles = StyleSheet.create({
     mapFallback: { flex: 1, justifyContent: "center", alignItems: "center", padding: 12 },
     privacy: { marginTop: 15, textAlign: "center", fontSize: 12, color: "#555", paddingHorizontal: 20 },
     saveButton: { backgroundColor: "#C39BFF", margin: 20, paddingVertical: 12, borderRadius: 25, alignItems: "center" },
+    saveButtonDisabled: { opacity: 0.75 },
     saveText: { fontSize: 18, fontWeight: "700", color: "#fff" },
 
-    // Skills styles
-    skillRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginHorizontal: 20, marginTop: 5, padding: 8, backgroundColor: "#F5F5F5", borderRadius: 10 },
-    skillText: { fontSize: 16, fontWeight: "500" },
+    // Skills
+    skillRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginHorizontal: 20, marginTop: 5, padding: 8, backgroundColor: "#fff", borderRadius: 10 },
+    skillText: { fontSize: 16, fontWeight: "500", color: "#000" },
     skillInputRow: { flexDirection: "row", marginHorizontal: 20, marginTop: 5 },
     addSkillButton: { backgroundColor: "#B388FF", marginHorizontal: 20, marginTop: 8, paddingVertical: 10, borderRadius: 10, alignItems: "center" },
     addSkillText: { color: "#fff", fontWeight: "700" },
 
-    // Availability styles
+    // Availability
     availabilityRow: {
         flexDirection: "row",
         alignItems: "center",
         marginHorizontal: 20,
         marginTop: 10,
         padding: 12,
-        backgroundColor: "#F5F5F5",
-        borderRadius: 10,
-    },
-    dayLabel: {
-        flex: 1,
-        fontSize: 16,
-    },
-    toggleContainer: {
-        marginRight: 10,
-    },
-    toggle: {
-        width: 40,
-        height: 20,
-        borderRadius: 10,
-        backgroundColor: "#ddd",
-        justifyContent: "center",
-        alignItems: "flex-start",
-    },
-    toggleActive: {
-        backgroundColor: "#B388FF",
-        alignItems: "flex-end",
-    },
-    toggleHandle: {
-        width: 16,
-        height: 16,
-        borderRadius: 8,
-        backgroundColor: "#fff",
-        margin: 2,
-    },
-    timeInputs: {
-        flexDirection: "row",
-        alignItems: "center",
-        flex: 1,
-        marginLeft: 10,
-    },
-    timeInput: {
-        flex: 1,
-        height: 40,
         backgroundColor: "#fff",
         borderRadius: 10,
-        paddingHorizontal: 10,
-        fontSize: 16,
-        textAlign: "center",
     },
-    toLabel: {
-        marginHorizontal: 5,
-        fontSize: 16,
-        fontWeight: "600",
-    },
+    dayLabel: { flex: 1, fontSize: 16, color: "#000" },
+    toggleContainer: { marginRight: 10 },
+    toggle: { width: 40, height: 20, borderRadius: 10, backgroundColor: "#ddd", justifyContent: "center", alignItems: "flex-start" },
+    toggleActive: { backgroundColor: "#B388FF", alignItems: "flex-end" },
+    toggleHandle: { width: 16, height: 16, borderRadius: 8, backgroundColor: "#fff", margin: 2 },
+    timeInputs: { flexDirection: "row", alignItems: "center", flex: 1, marginLeft: 10 },
+    timeInput: { flex: 1, height: 40, backgroundColor: "#fff", borderRadius: 10, paddingHorizontal: 10, fontSize: 16, textAlign: "center", color: "#000" },
+    toLabel: { marginHorizontal: 5, fontSize: 16, fontWeight: "600" },
 
-    photoPicker: {
-        marginHorizontal: 20,
-        backgroundColor: "#F5F5F5",
-        height: 180,
-        borderRadius: 15,
-        justifyContent: "center",
-        alignItems: "center",
-        marginTop: 10,
-        overflow: "hidden",
-    },
-
-    photoPlaceholder: {
-        color: "#666",
-        fontSize: 15,
-    },
-
-    profileImage: {
-        width: "100%",
-        height: "100%",
-        resizeMode: "cover",
-    },
+    photoPicker: { marginHorizontal: 20, backgroundColor: "#fff", height: 180, borderRadius: 15, justifyContent: "center", alignItems: "center", marginTop: 10, overflow: "hidden" },
+    photoPlaceholder: { color: "#666", fontSize: 15 },
+    profileImage: { width: "100%", height: "100%", resizeMode: "cover" },
 });

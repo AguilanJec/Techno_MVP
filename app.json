@@ -8,9 +8,11 @@
     "scheme": "technomvp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+
     "ios": {
       "supportsTablet": true
     },
+
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
@@ -20,12 +22,20 @@
       },
       "edgeToEdgeEnabled": false,
       "predictiveBackGestureEnabled": false,
-      "package": "com.stiers.Hirayag"
+      "package": "com.stiers.Hirayag",
+
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyBI8BRIYcKlW9jhWtQsNVxxAinr9N9WqzU"
+        }
+      }
     },
+
     "web": {
       "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
+
     "plugins": [
       "expo-router",
       [
@@ -42,10 +52,12 @@
       ],
       "expo-web-browser"
     ],
+
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
     },
+
     "extra": {
       "router": {},
       "eas": {

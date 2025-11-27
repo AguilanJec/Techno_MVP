@@ -355,7 +355,7 @@ const ServiceBookingsScreen: React.FC = () => {
             if (existingConversationId) {
                 // Navigate to existing conversation
                 router.push({
-                    pathname: "/chat",
+                    pathname: "/user/chat",
                     params: {
                         conversationId: existingConversationId,
                         otherUserName: booking.userName,
@@ -376,7 +376,7 @@ const ServiceBookingsScreen: React.FC = () => {
 
                 const docRef = await addDoc(collection(db, "conversations"), newConversation);
                 router.push({
-                    pathname: "/chat",
+                    pathname: "/user/chat",
                     params: {
                         conversationId: docRef.id,
                         otherUserName: booking.userName,
@@ -429,8 +429,10 @@ const ServiceBookingsScreen: React.FC = () => {
                 <TextInput
                     style={styles.searchInput}
                     placeholder="Search bookings..."
+                    placeholderTextColor="#999"
                     value={searchQuery}
                     onChangeText={setSearchQuery}
+                    selectionColor="#b58dde"
                 />
             </View>
 

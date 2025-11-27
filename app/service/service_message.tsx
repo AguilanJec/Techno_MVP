@@ -241,7 +241,7 @@ export default function ServiceMessageScreen() {
                 onPress={() => {
                     if (otherUserId) {
                         router.push({
-                            pathname: "/chat",
+                            pathname: "/user/chat",
                             params: {
                                 conversationId: item.id,
                                 otherUserName: otherUserName,

@@ -145,7 +145,7 @@ const ServiceProfileScreen: React.FC = () => {
     const handleLogout = async () => {
         try {
             await signOut(auth);
-            router.push("/login");
+            router.push("/authentication/login");
         } catch (error) {
             console.error("Error signing out:", error);
         }

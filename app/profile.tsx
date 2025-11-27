@@ -52,7 +52,7 @@ const ProfileScreen: React.FC = () => {
                     onPress: async () => {
                         try {
                             await signOut(auth);
-                            router.push("/login");
+                            router.push("/authentication/login");
                         } catch (error) {
                             console.error("Error signing out:", error);
                             Alert.alert("Error", "Failed to logout. Please try again.");
@@ -189,7 +189,7 @@ const ProfileScreen: React.FC = () => {
                 <TouchableOpacity onPress={() => router.push("/user/search")}>
                     <Ionicons name="search-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => router.push("/message")}>
+                <TouchableOpacity onPress={() => router.push("/user/message")}>
                     <Ionicons name="chatbubble-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => router.push("/user/account")}>

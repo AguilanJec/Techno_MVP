@@ -44,7 +44,7 @@ export default function AccountScreen() {
                     onPress: async () => {
                         try {
                             await signOut(auth);
-                            router.push("/login");
+                            router.push("/authentication/login");
                         } catch (error) {
                             console.error("Error signing out:", error);
                             Alert.alert("Error", "Failed to logout. Please try again.");
@@ -101,7 +101,7 @@ export default function AccountScreen() {
                         <Text style={styles.itemText}>My bookings</Text>
                         <Ionicons name="chevron-forward" size={18} color="#777" />
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.item} onPress={() => router.push("/message")}>
+                    <TouchableOpacity style={styles.item} onPress={() => router.push("/user/message")}>
                         <Text style={styles.itemText}>My messages</Text>
                         <Ionicons name="chevron-forward" size={18} color="#777" />
                     </TouchableOpacity>
@@ -121,7 +121,7 @@ export default function AccountScreen() {
                 {/* SUPPORT */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>Support</Text>
-                    <TouchableOpacity style={styles.item} onPress={() => router.push("/feedback")}>
+                    <TouchableOpacity style={styles.item} onPress={() => router.push("/user/feedback")}>
                         <Text style={styles.itemText}>Help centre</Text>
                         <Ionicons name="chevron-forward" size={18} color="#777" />
                     </TouchableOpacity>
@@ -180,7 +180,7 @@ export default function AccountScreen() {
                 <TouchableOpacity onPress={() => router.push("/user/search")}>
                     <Ionicons name="search-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => router.push("/message")}>
+                <TouchableOpacity onPress={() => router.push("/user/message")}>
                     <Ionicons name="chatbubble-outline" size={24} color="#8e44ad" />
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => router.push("/user/account")}>

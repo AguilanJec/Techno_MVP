@@ -9,6 +9,7 @@ import {
     Alert,
     ActivityIndicator,
     Platform,
+    Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
@@ -24,7 +25,8 @@ type Provider = {
     rating?: number;
     reviews?: number;
     distance?: string;
-    availability?: any; // raw availability map from provider doc
+    availability?: any;
+    picture?: string;
 };
 
 const WEEKDAYS = [
@@ -163,6 +165,7 @@ export default function AppointmentScreen() {
                         reviews: Array.isArray(d.reviews) ? d.reviews.length : typeof d.reviews === "number" ? d.reviews : undefined,
                         distance: d.distance || undefined,
                         availability: d.availability ?? d.availabilityMap ?? undefined,
+                        picture: d.picture || undefined, // ADD THIS LINE
                     });
                 } else {
                     setProvider(null);
@@ -624,14 +627,19 @@ export default function AppointmentScreen() {
                         <View>
                             <Text style={styles.cardName}>{provider.name}</Text>
                             <View style={{ flexDirection: "row", alignItems: "center", marginTop: 6 }}>
-                                <Ionicons name="location-outline" size={14} color="#777" />
-                                <Text style={styles.cardMeta}> {provider.distance ?? "—"}</Text>
                             </View>
                             <Text style={[styles.rate, { marginTop: 8 }]}>
                                 {provider.rate ? `₱${provider.rate}/hour` : "—/hour"}
                             </Text>
                         </View>
-                        <Ionicons name="person-circle-outline" size={60} color="#EDE4F7" />
+                        {provider.picture ? (
+                            <Image
+                                source={{ uri: provider.picture }}
+                                style={styles.providerImage}
+                            />
+                        ) : (
+                            <Ionicons name="person-circle-outline" size={60} color="#EDE4F7" />
+                        )}
                     </View>
                 </View>
 
@@ -939,6 +947,12 @@ const styles = StyleSheet.create({
         flexDirection: "row",
         justifyContent: "space-between",
         alignItems: "center",
+    },
+    providerImage: {
+        width: 60,
+        height: 60,
+        borderRadius: 30,
+        backgroundColor: "#eee",
     },
     estimateText: { fontSize: 16, fontWeight: "700", color: "#333", marginTop: 6 },
     bookButton: {

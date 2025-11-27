@@ -7,13 +7,15 @@ import {
     Image,
     StyleSheet,
     Alert,
+    ActivityIndicator,
+    Platform,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { router } from "expo-router";
 import { auth, db } from "../../firebaseConfig";
+import { createUserWithEmailAndPassword } from "firebase/auth";
 import { fetchSignInMethodsForEmail } from "firebase/auth";
 import { collection, query, where, getDocs } from "firebase/firestore";
-
 
 export default function RegisterScreen() {
     const navigation = useNavigation();
@@ -26,10 +28,13 @@ export default function RegisterScreen() {
     const [confirmPasswordError, setConfirmPasswordError] = useState("");
     const [emailError, setEmailError] = useState("");
 
-    // Input validation
+    // Input validation flags
     const [passwordValid, setPasswordValid] = useState(true);
     const [confirmPasswordValid, setConfirmPasswordValid] = useState(true);
     const [emailValid, setEmailValid] = useState(true);
+
+    // Loading state for Sign Up button
+    const [loading, setLoading] = useState(false);
 
     // Live validation
     useEffect(() => {
@@ -50,14 +55,12 @@ export default function RegisterScreen() {
         }
     }, [password, confirmPassword]);
 
-
-
     const handleSignUp = async () => {
+        if (loading) return; // prevent double submit
+        setLoading(true);
+
         let valid = true;
-
         const cleanEmail = email.trim().toLowerCase();
-
-        // Strict email validation
         const emailRegex = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
 
         // Email validation
@@ -96,10 +99,13 @@ export default function RegisterScreen() {
             valid = false;
         }
 
-        if (!valid) return;
+        if (!valid) {
+            setLoading(false);
+            return;
+        }
 
         try {
-            // 1️⃣ Check Firebase Auth users
+            // 1) Check Firebase Auth users
             const methods = await fetchSignInMethodsForEmail(auth, cleanEmail);
             if (methods.length > 0) {
                 setEmailError("Email already in use");
@@ -108,11 +114,10 @@ export default function RegisterScreen() {
                 return;
             }
 
-            // 2️⃣ Check Firestore users table
+            // 2) Check Firestore users collection
             const usersRef = collection(db, "users");
             const checkUser = query(usersRef, where("email", "==", cleanEmail));
             const userSnap = await getDocs(checkUser);
-
             if (!userSnap.empty) {
                 setEmailError("Email already exists in users");
                 setEmailValid(false);
@@ -120,11 +125,10 @@ export default function RegisterScreen() {
                 return;
             }
 
-            // 3️⃣ Check Firestore providers table
+            // 3) Check Firestore providers collection
             const providersRef = collection(db, "providers");
             const checkProvider = query(providersRef, where("email", "==", cleanEmail));
             const providerSnap = await getDocs(checkProvider);
-
             if (!providerSnap.empty) {
                 setEmailError("Email already exists in providers");
                 setEmailValid(false);
@@ -132,19 +136,18 @@ export default function RegisterScreen() {
                 return;
             }
 
-            // If all checks pass → move to Terms & Conditions
+            // All checks pass → move to Terms & Conditions
             router.push({
                 pathname: "/authentication/terms_conditions",
                 params: { email: cleanEmail, password, confirmPassword },
             });
-
         } catch (error) {
             console.log("Sign Up Error:", error);
             Alert.alert("Error", "Something went wrong. Please try again later.");
+        } finally {
+            setLoading(false);
         }
     };
-
-
 
     return (
         <View style={styles.container}>
@@ -164,37 +167,56 @@ export default function RegisterScreen() {
             <TextInput
                 style={[styles.input, !emailValid && styles.inputError]}
                 placeholder="Email"
-                placeholderTextColor="#aaa"
+                placeholderTextColor="#777"
                 value={email}
                 onChangeText={setEmail}
                 autoCapitalize="none"
                 keyboardType="email-address"
+                textContentType="emailAddress"
+                selectionColor="#000"
+                autoCorrect={false}
             />
             {emailError ? <Text style={styles.errorText}>{emailError}</Text> : null}
 
             <TextInput
                 style={[styles.input, !passwordValid && styles.inputError]}
                 placeholder="Password"
-                placeholderTextColor="#aaa"
+                placeholderTextColor="#777"
                 secureTextEntry
                 value={password}
                 onChangeText={setPassword}
+                textContentType="password"
+                selectionColor="#000"
+                autoCorrect={false}
             />
             {passwordError ? <Text style={styles.errorText}>{passwordError}</Text> : null}
 
             <TextInput
                 style={[styles.input, !confirmPasswordValid && styles.inputError]}
                 placeholder="Confirm Password"
-                placeholderTextColor="#aaa"
+                placeholderTextColor="#777"
                 secureTextEntry
                 value={confirmPassword}
                 onChangeText={setConfirmPassword}
+                textContentType="password"
+                selectionColor="#000"
+                autoCorrect={false}
             />
             {confirmPasswordError ? <Text style={styles.errorText}>{confirmPasswordError}</Text> : null}
 
-            {/* ⬇️ FIX: use handleSignUp */}
-            <TouchableOpacity style={styles.signUpButton} onPress={handleSignUp}>
-                <Text style={styles.signUpText}>Sign Up</Text>
+            <TouchableOpacity
+                style={[styles.signUpButton, loading && styles.signUpButtonDisabled]}
+                onPress={handleSignUp}
+                disabled={loading}
+            >
+                {loading ? (
+                    <View style={styles.loadingRow}>
+                        <ActivityIndicator size="small" color="#fff" style={{ marginRight: 10 }} />
+                        <Text style={styles.signUpText}>Signing up...</Text>
+                    </View>
+                ) : (
+                    <Text style={styles.signUpText}>Sign Up</Text>
+                )}
             </TouchableOpacity>
 
             <View style={styles.dividerContainer}>
@@ -216,7 +238,7 @@ export default function RegisterScreen() {
 
             <Text style={styles.footerText}>
                 Already have an account?{" "}
-                <Text style={styles.loginLink} onPress={() => router.push("/login")}>
+                <Text style={styles.loginLink} onPress={() => router.push("/authentication/login")}>
                     Login
                 </Text>
             </Text>
@@ -231,11 +253,29 @@ const styles = StyleSheet.create({
     logo: { width: 160, height: 160 },
     title: { fontSize: 26, fontWeight: "bold", color: "#6A4BBC", marginTop: 10 },
     subtitle: { fontSize: 14, color: "#444", marginBottom: 20 },
-    input: { width: "80%", backgroundColor: "#fff", borderRadius: 10, padding: 12, marginBottom: 5, fontSize: 16, elevation: 2 },
-    inputError: { borderColor: "#FF0000", borderWidth: 2, backgroundColor: "#FFE6E6" },
+    input: {
+        width: "80%",
+        backgroundColor: "#fff",
+        borderRadius: 10,
+        padding: 12,
+        marginBottom: 5,
+        fontSize: 16,
+        elevation: 2,
+        color: "#000",
+    },
+    inputError: { borderColor: "#FF0000", borderWidth: 2, backgroundColor: "#FFE6E6", color: "#000" },
     errorText: { width: "80%", color: "#FF0000", fontSize: 12, marginBottom: 10, paddingLeft: 10 },
-    signUpButton: { backgroundColor: "#B7A1E5", borderRadius: 10, paddingVertical: 12, width: "80%", alignItems: "center", marginTop: 10 },
+    signUpButton: {
+        backgroundColor: "#B7A1E5",
+        borderRadius: 10,
+        paddingVertical: 12,
+        width: "80%",
+        alignItems: "center",
+        marginTop: 10,
+    },
+    signUpButtonDisabled: { opacity: 0.7 },
     signUpText: { color: "#fff", fontSize: 18, fontWeight: "bold" },
+    loadingRow: { flexDirection: "row", alignItems: "center" },
     dividerContainer: { flexDirection: "row", alignItems: "center", marginVertical: 15 },
     divider: { height: 1, width: 60, backgroundColor: "#aaa" },
     orText: { marginHorizontal: 8, color: "#444" },
