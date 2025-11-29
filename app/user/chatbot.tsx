@@ -15,10 +15,12 @@ import { Ionicons } from "@expo/vector-icons";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 
-const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || "";
+import Constants from 'expo-constants';
+
+const GEMINI_API_KEY = Constants.expoConfig?.extra?.geminiApiKey ?? '';
 
 if (!GEMINI_API_KEY) {
-    console.error("GEMINI_API_KEY missing! Add EXPO_PUBLIC_GEMINI_API_KEY=yourkey to .env.local");
+    console.error("GEMINI_API_KEY missing! Add EXPO_PUBLIC_GEMINI_API_KEY=yourkey to .env");
 }
 
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
